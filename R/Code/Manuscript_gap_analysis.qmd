@@ -144,7 +144,7 @@ summary_stats <- data.frame(
 kable(summary_stats, caption = "Summary statistics for no-take MPA coverage", digits = 2)
 
 # Save results to CSV
-write.csv(results, here::here("Data","species_mpa_coverage_NT.csv"), row.names = FALSE)
+write.csv(results, here::here("R","Data","species_mpa_coverage_NT.csv"), row.names = FALSE)
 ```
 
 # Map of mean % range covered
@@ -1313,7 +1313,7 @@ write.csv(ecoregion_ses_stats,
 
 # Relate to IUCN status
 
-## Relate the percentage of species range overlapped by MPAs to the IUCN Red List status with betaregression analysis
+## Relate the percentage of species range overlapped by MPAs to the IUCN Red List status 
 
 ```{r}
 # Join IUCN and results data
@@ -1359,6 +1359,410 @@ summary_stats_nt <- results_IUCN_filtered %>%
 
 print("Summary statistics for No-take MPAs:")
 print(summary_stats_nt)
+
+#======================
+# DETAILED DATA EXPLORATION
+#======================
+
+print("\n1. SUMMARY STATISTICS FOR NO-TAKE MPAs (%):")
+
+# Raw summary statistics for no-take MPAs
+summary_stats_nt <- results_IUCN_filtered %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    count = n(),
+    mean = mean(NT, na.rm = TRUE),
+    median = median(NT, na.rm = TRUE),
+    sd = sd(NT, na.rm = TRUE),
+    min = min(NT, na.rm = TRUE),
+    max = max(NT, na.rm = TRUE),
+    Q1 = quantile(NT, 0.25, na.rm = TRUE),
+    Q3 = quantile(NT, 0.75, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+print(summary_stats_nt)
+
+# Check for zeros
+print("\n2. SPECIES WITH ZERO COVERAGE:")
+zero_coverage <- results_IUCN_filtered %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    n_zeros = sum(NT == 0, na.rm = TRUE),
+    pct_zeros = round(100 * sum(NT == 0, na.rm = TRUE) / n(), 2),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+print(zero_coverage)
+
+# Distribution shape
+print("\n3. DISTRIBUTION SHAPE (Skewness):")
+library(moments)
+
+# Calculate overall skewness
+overall_skewness <- skewness(results_IUCN_filtered$NT, na.rm = TRUE)
+
+# Calculate skewness by category
+skewness_stats <- results_IUCN_filtered %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    skewness = skewness(NT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+# Add overall as first row
+overall_row <- data.frame(
+  IUCN_status = "Overall",
+  skewness = overall_skewness
+)
+
+skewness_stats <- rbind(overall_row, skewness_stats)
+
+print(skewness_stats)
+
+#======================
+# STATISTICAL TESTS
+#======================
+
+cat("NON-PARAMETRIC STATISTICAL TESTS\n")
+
+# 1. Jonckheere-Terpstra test
+library(DescTools)
+cat("\n1. JONCKHEERE-TERPSTRA TEST (for ordered alternatives):\n")
+jt_result <- JonckheereTerpstraTest(results_IUCN_filtered$NT, 
+                                     results_IUCN_filtered$iucn_GE,
+                                     alternative = "decreasing")
+print(jt_result)
+
+# 2. Spearman correlation
+cat("\n2. SPEARMAN RANK CORRELATION:\n")
+spearman_result <- cor.test(results_IUCN_filtered$iucn_GE, 
+                             results_IUCN_filtered$NT, 
+                             method = "spearman")
+print(spearman_result)
+
+# 3. Kolmogorov-Smirnov test (LC vs CR)
+cat("\n3. KOLMOGOROV-SMIRNOV TEST (LC vs CR):\n")
+ks_result <- ks.test(
+  results_IUCN_filtered$NT[results_IUCN_filtered$IUCN_status == "LC"],
+  results_IUCN_filtered$NT[results_IUCN_filtered$IUCN_status == "CR"]
+)
+print(ks_result)
+
+#======================
+# QUANTILE REGRESSION ANALYSIS
+#======================
+
+library(quantreg)
+
+cat("QUANTILE REGRESSION ANALYSIS\n")
+
+# Define quantiles to test
+quantiles <- seq(0.1, 0.9, by = 0.1)
+
+# Initialize results data frame
+qr_results <- data.frame()
+
+# Fit quantile regression for each quantile
+for (tau in quantiles) {
+  cat(paste("Fitting quantile regression for tau =", tau, "...\n"))
+  
+  tryCatch({
+    qr_model <- rq(NT ~ iucn_GE, tau = tau, data = results_IUCN_filtered)
+    qr_summary <- summary(qr_model, se = "boot", R = 500)
+    coef_table <- qr_summary$coefficients
+    
+    temp_result <- data.frame(
+      Quantile = paste0("Q", tau * 100),
+      Tau = tau,
+      Intercept = coef_table[1, 1],
+      Intercept_SE = coef_table[1, 2],
+      Intercept_t = coef_table[1, 3],
+      Intercept_p = coef_table[1, 4],
+      Slope = coef_table[2, 1],
+      Slope_SE = coef_table[2, 2],
+      Slope_t = coef_table[2, 3],
+      Slope_p = coef_table[2, 4]
+    )
+    
+    qr_results <- rbind(qr_results, temp_result)
+    cat("  Success!\n")
+    
+  }, error = function(e) {
+    cat(paste("  Error at tau =", tau, ":", e$message, "\n"))
+    cat("  Skipping this quantile.\n")
+  })
+}
+
+# Create cleaned version (exclude NA p-values)
+qr_clean <- qr_results[!is.na(qr_results$Slope_p), ]
+
+if (nrow(qr_clean) > 0) {
+  
+  # Add significance indicator
+  qr_clean$Significant <- ifelse(qr_clean$Slope_p < 0.05, "Yes*", "No")
+  
+  # Round for display
+  qr_summary_clean <- qr_clean
+  qr_summary_clean$Slope <- round(qr_summary_clean$Slope, 3)
+  qr_summary_clean$Slope_SE <- round(qr_summary_clean$Slope_SE, 3)
+  qr_summary_clean$Slope_t <- round(qr_summary_clean$Slope_t, 3)
+  qr_summary_clean$Slope_p <- round(qr_summary_clean$Slope_p, 4)
+  
+  # Create table for display
+  simple_table <- qr_summary_clean[, c("Quantile", "Tau", "Slope", "Slope_SE", 
+                                        "Slope_t", "Slope_p", "Significant")]
+  
+  # Rename columns for better display
+  colnames(simple_table) <- c("Quantile", "τ", "Slope", "SE", "t", "p-value", "Significant")
+  
+  simple_kable = kable(simple_table, 
+        format = "html",
+        col.names = c("Quantile", "τ", "Slope", "SE", "t", "p-value", "Significant"),
+        caption = "Quantile regression results for current no-take MPA coverage by IUCN threat status", 
+        digits = 2,
+        row.names = FALSE,
+        align = c("l", "c", "c", "c", "c", "c", "c")) %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                  full_width = FALSE,
+                  position = "center") %>%
+    column_spec(1, bold = TRUE, width = "80px") %>%
+    column_spec(2, width = "60px") %>%
+    column_spec(3:5, width = "80px") %>%
+    column_spec(6, width = "90px") %>%
+    column_spec(7, width = "100px", 
+                color = ifelse(simple_table$Significant == "Yes*", "#D81E05", "gray50")) %>%
+    row_spec(0, bold = TRUE, background = "#f0f0f0") %>%
+    row_spec(which(simple_table$Significant == "Yes*"), 
+             background = "#fff5f5") %>%
+    footnote(general = "Bootstrap standard errors with 500 replications. Significant quantiles (p < 0.05) are highlighted.",
+             general_title = "Note:")
+  
+  # Save as PNG
+  save_kable(simple_kable,
+             file = here::here("R","Outputs", "simple_kable_quantile results.png"),
+             zoom = 2)
+  #======================
+  # FIGURE 1: Distribution plot + Quantile slopes
+  #====================
+  
+  # Panel A: Distribution plot (matching your original)
+  notake_mpa_iucn <- results_IUCN_filtered %>%
+    dplyr::select(species, IUCN_status, NT) %>%
+    rename(protection = NT)
+  
+  # Prepare data for quantile regression lines on categorical x-axis
+  # We need to convert IUCN_status factor levels to numeric positions for plotting
+  qr_lines_categorical <- data.frame()
+  
+  for (tau in fitted_quantiles) {
+    qr_model <- rq(NT ~ iucn_GE, tau = tau, data = results_IUCN_filtered)
+    
+    # Predict for each IUCN category (0-4)
+    pred_data <- data.frame(iucn_GE = 0:4)
+    pred_data$predicted <- predict(qr_model, newdata = pred_data)
+    pred_data$IUCN_status <- c("LC", "NT", "VU", "EN", "CR")
+    pred_data$quantile <- tau
+    pred_data$quantile_label <- paste0("Q", tau * 100)
+    
+    qr_lines_categorical <- rbind(qr_lines_categorical, pred_data)
+  }
+  
+  # Add significance status
+  qr_lines_categorical <- qr_lines_categorical %>%
+    left_join(qr_summary_clean[, c("Tau", "Significant")], 
+              by = c("quantile" = "Tau"))
+  
+  # Panel A: Distribution with quantile regression lines
+  panel_a <- ggplot() +
+    # Raw data points
+    geom_jitter(data = notake_mpa_iucn,
+                aes(x = factor(IUCN_status, levels = iucn_order), 
+                    y = protection,
+                    color = IUCN_status),
+                width = 0.1, 
+                size = 1.5, 
+                alpha = 0.6) +
+    # Quantile regression lines
+    geom_line(data = qr_lines_categorical,
+              aes(x = factor(IUCN_status, levels = iucn_order),
+                  y = predicted,
+                  group = quantile_label,
+                  linetype = Significant),
+              color = "black",
+              linewidth = 0.8) +
+    # Add quantile labels on the LEFT (LC side)
+    geom_text(data = qr_lines_categorical %>% 
+                filter(IUCN_status == "LC"),
+              aes(x = 0.8, y = predicted, 
+                  label = quantile_label),
+              size = 3, hjust = 1) +
+    scale_color_manual(values = iucn_colors) +
+    scale_linetype_manual(values = c("No" = "dashed", "Yes*" = "solid")) +
+    labs(x = "IUCN Red List threat status", 
+         y = "(%) Range within no-take MPAs") +
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      panel.grid.major.x = element_blank(),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA)
+    ) +
+    scale_x_discrete(limits = iucn_order) +
+    scale_y_sqrt(limits = c(0, 50),
+                 breaks = seq(0, 50, 10),
+                 labels = c("0", "10", "20", "30", "40", "")) +
+    coord_cartesian(clip = "off")
+  
+  # Panel B: Quantile slopes
+  panel_b <- ggplot(qr_summary_clean, aes(x = Tau, y = Slope)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50", linewidth = 1) +
+    geom_line(linewidth = 1.2, color = "black") +
+    geom_point(aes(color = Significant), size = 4) +
+    geom_ribbon(aes(ymin = Slope - 1.96 * Slope_SE, 
+                    ymax = Slope + 1.96 * Slope_SE),
+                alpha = 0.3, fill = "steelblue") +
+    scale_color_manual(values = c("No" = "gray60", "Yes*" = "#D81E05"),
+                       name = "Significant at α=0.05") +
+    labs(
+      x = "Quantile (τ)",
+      y = "Slope coefficient\n(% change per IUCN category)"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.title = element_text(size = 11),
+      legend.position = "bottom",
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      panel.grid.minor = element_blank()
+    ) +
+    scale_x_continuous(breaks = qr_summary_clean$Tau, 
+                       labels = qr_summary_clean$Quantile)
+  
+  # Combine panels
+  fig1_combined <- ggpubr::ggarrange(
+    panel_a,
+    panel_b,
+    ncol = 2,
+    nrow = 1,
+    labels = c("(A)", "(B)"),
+    font.label = list(size = 14, face = "bold")
+  )
+  
+  print(fig1_combined)
+  
+  ggsave(
+    filename = here::here("R","Outputs", "FigS1_distribution_and_slopes.png"),
+    plot = fig1_combined,
+    width = 14,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+  
+
+  #======================
+  # FIGURE 2: Scatterplot with fitted quantile regression lines
+  #======================
+  
+  cat("\n")
+  cat(rep("=", 80), "\n", sep="")
+  cat("CREATING FIGURE 2: SCATTERPLOT WITH QUANTILE REGRESSION LINES\n")
+  cat(rep("=", 80), "\n", sep="")
+  
+  # Get fitted quantiles
+  fitted_quantiles <- qr_summary_clean$Tau
+  
+  # Create data frame for fitted lines
+  fitted_lines <- data.frame()
+  
+  for (tau in fitted_quantiles) {
+    qr_model <- rq(NT ~ iucn_GE, tau = tau, data = results_IUCN_filtered)
+    pred_data <- data.frame(iucn_GE = seq(0, 4, by = 0.1))
+    pred_data$predicted <- predict(qr_model, newdata = pred_data)
+    pred_data$quantile <- tau
+    pred_data$quantile_label <- paste0("Q", tau * 100)
+    
+    fitted_lines <- rbind(fitted_lines, pred_data)
+  }
+  
+  # Add significance status
+  fitted_lines <- fitted_lines %>%
+    left_join(qr_summary_clean[, c("Tau", "Significant")], 
+              by = c("quantile" = "Tau"))
+  
+  # Create scatterplot
+  qr_scatter <- ggplot() +
+    # Raw data points
+    geom_jitter(data = results_IUCN_filtered,
+                aes(x = iucn_GE, y = NT),
+                width = 0.15, height = 0,
+                alpha = 0.2, size = 1.5, color = "gray60") +
+    # Quantile regression lines
+    geom_line(data = fitted_lines,
+              aes(x = iucn_GE, y = predicted, 
+                  group = quantile_label,
+                  color = quantile,
+                  linetype = Significant),
+              linewidth = 1.2) +
+    # Quantile labels
+    geom_text(data = fitted_lines %>% 
+                filter(iucn_GE == max(iucn_GE)),
+              aes(x = iucn_GE + 0.15, y = predicted, 
+                  label = quantile_label,
+                  color = quantile),
+              size = 3.5, hjust = 0, fontface = "bold") +
+    scale_color_gradient(low = "#3498db", high = "#e74c3c",
+                         name = "Quantile (τ)",
+                         breaks = c(0.3, 0.5, 0.7, 0.9)) +
+    scale_linetype_manual(values = c("No" = "dashed", "Yes*" = "solid"),
+                          name = NULL,
+                          labels = c("No" = "Not significant (p ≥ 0.05)", 
+                                     "Yes*" = "Significant (p < 0.05)")) +
+    labs(
+      x = "IUCN threat status",
+      y = "MPA coverage (%)"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 11),
+      legend.position = "right",
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      panel.grid.minor = element_blank()
+    ) +
+    scale_x_continuous(breaks = 0:4, 
+                       labels = c("LC", "NT", "VU", "EN", "CR")) +
+    scale_y_continuous(limits = c(0, 50)) +
+    coord_cartesian(xlim = c(-0.2, 4.8), clip = "off") +
+    guides(color = guide_colorbar(order = 1),
+           linetype = guide_legend(order = 2))
+  
+  print(qr_scatter)
+  
+  ggsave(
+    filename = here::here("R","Outputs", "Fig2_quantile_regression_scatterplot.png"),
+    plot = qr_scatter,
+    width = 10,
+    height = 7,
+    dpi = 300,
+    bg = "white"
+  )
+  
+  cat("Figure 2 saved to: Fig2_quantile_regression_scatterplot.png\n")
+  
+} else {
+  cat("\nERROR: No valid quantile regression results obtained.\n")
+}
+
+cat("\n")
+cat(rep("=", 80), "\n", sep="")
+cat("ANALYSIS COMPLETE\n")
+cat(rep("=", 80), "\n", sep="")
+
 #======================
 # Beta Regression for No-take MPAs
 #======================
@@ -1393,6 +1797,20 @@ print(data.frame(
 # Average decrease per category
 avg_decrease_nt <- mean(diff(mpa_pred_nt))
 print(paste("Average decrease per threat category:", round(avg_decrease_nt, 2), "%"))
+
+#Sensitivity analysis
+# Jonckheere-Terpstra test
+library(DescTools)
+jt_result <- JonckheereTerpstraTest(results_IUCN_filtered$NT, 
+                                     results_IUCN_filtered$iucn_GE,
+                                     alternative = "decreasing")
+print(jt_result)
+
+# Spearman correlation
+spearman_result <- cor.test(results_IUCN_filtered$iucn_GE, 
+                             results_IUCN_filtered$NT, 
+                             method = "spearman")
+print(spearman_result)
 
 #======================
 # Ridge Plot with Points - No-take MPAs
