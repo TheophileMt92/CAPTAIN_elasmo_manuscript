@@ -1654,7 +1654,7 @@ if (nrow(qr_clean) > 0) {
   print(fig1_combined)
   
   ggsave(
-    filename = here::here("R","Outputs", "FigS1_distribution_and_slopes.png"),
+    filename = here::here("R","Outputs", "FigS1_quantile_regression.png"),
     plot = fig1_combined,
     width = 14,
     height = 6,
@@ -1662,107 +1662,6 @@ if (nrow(qr_clean) > 0) {
     bg = "white"
   )
   
-
-  #======================
-  # FIGURE 2: Scatterplot with fitted quantile regression lines
-  #======================
-  
-  cat("\n")
-  cat(rep("=", 80), "\n", sep="")
-  cat("CREATING FIGURE 2: SCATTERPLOT WITH QUANTILE REGRESSION LINES\n")
-  cat(rep("=", 80), "\n", sep="")
-  
-  # Get fitted quantiles
-  fitted_quantiles <- qr_summary_clean$Tau
-  
-  # Create data frame for fitted lines
-  fitted_lines <- data.frame()
-  
-  for (tau in fitted_quantiles) {
-    qr_model <- rq(NT ~ iucn_GE, tau = tau, data = results_IUCN_filtered)
-    pred_data <- data.frame(iucn_GE = seq(0, 4, by = 0.1))
-    pred_data$predicted <- predict(qr_model, newdata = pred_data)
-    pred_data$quantile <- tau
-    pred_data$quantile_label <- paste0("Q", tau * 100)
-    
-    fitted_lines <- rbind(fitted_lines, pred_data)
-  }
-  
-  # Add significance status
-  fitted_lines <- fitted_lines %>%
-    left_join(qr_summary_clean[, c("Tau", "Significant")], 
-              by = c("quantile" = "Tau"))
-  
-  # Create scatterplot
-  qr_scatter <- ggplot() +
-    # Raw data points
-    geom_jitter(data = results_IUCN_filtered,
-                aes(x = iucn_GE, y = NT),
-                width = 0.15, height = 0,
-                alpha = 0.2, size = 1.5, color = "gray60") +
-    # Quantile regression lines
-    geom_line(data = fitted_lines,
-              aes(x = iucn_GE, y = predicted, 
-                  group = quantile_label,
-                  color = quantile,
-                  linetype = Significant),
-              linewidth = 1.2) +
-    # Quantile labels
-    geom_text(data = fitted_lines %>% 
-                filter(iucn_GE == max(iucn_GE)),
-              aes(x = iucn_GE + 0.15, y = predicted, 
-                  label = quantile_label,
-                  color = quantile),
-              size = 3.5, hjust = 0, fontface = "bold") +
-    scale_color_gradient(low = "#3498db", high = "#e74c3c",
-                         name = "Quantile (τ)",
-                         breaks = c(0.3, 0.5, 0.7, 0.9)) +
-    scale_linetype_manual(values = c("No" = "dashed", "Yes*" = "solid"),
-                          name = NULL,
-                          labels = c("No" = "Not significant (p ≥ 0.05)", 
-                                     "Yes*" = "Significant (p < 0.05)")) +
-    labs(
-      x = "IUCN threat status",
-      y = "MPA coverage (%)"
-    ) +
-    theme_minimal() +
-    theme(
-      axis.title = element_text(size = 12),
-      axis.text = element_text(size = 11),
-      legend.position = "right",
-      plot.background = element_rect(fill = "white", color = NA),
-      panel.background = element_rect(fill = "white", color = NA),
-      panel.grid.minor = element_blank()
-    ) +
-    scale_x_continuous(breaks = 0:4, 
-                       labels = c("LC", "NT", "VU", "EN", "CR")) +
-    scale_y_continuous(limits = c(0, 50)) +
-    coord_cartesian(xlim = c(-0.2, 4.8), clip = "off") +
-    guides(color = guide_colorbar(order = 1),
-           linetype = guide_legend(order = 2))
-  
-  print(qr_scatter)
-  
-  ggsave(
-    filename = here::here("R","Outputs", "Fig2_quantile_regression_scatterplot.png"),
-    plot = qr_scatter,
-    width = 10,
-    height = 7,
-    dpi = 300,
-    bg = "white"
-  )
-  
-  cat("Figure 2 saved to: Fig2_quantile_regression_scatterplot.png\n")
-  
-} else {
-  cat("\nERROR: No valid quantile regression results obtained.\n")
-}
-
-cat("\n")
-cat(rep("=", 80), "\n", sep="")
-cat("ANALYSIS COMPLETE\n")
-cat(rep("=", 80), "\n", sep="")
-
 #======================
 # Beta Regression for No-take MPAs
 #======================
