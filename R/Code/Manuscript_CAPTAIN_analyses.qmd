@@ -1105,6 +1105,169 @@ if(nrow(protected_fractions) == nrow(shark_metrics)) {
   # Display the saved image in the Quarto document
 knitr::include_graphics(here::here("R","Outputs", "Fig.2_combined_protection_dotplots.png"))
 
+#======================
+# COMPREHENSIVE BETA REGRESSION DIAGNOSTICS FOR CAPTAIN MODELS
+#======================
+
+cat("\n")
+cat(rep("=", 80), "\n", sep="")
+cat("COMPREHENSIVE BETA REGRESSION DIAGNOSTICS FOR CAPTAIN MODELS\n")
+cat(rep("=", 80), "\n", sep="")
+
+library(car)
+library(moments)
+
+# Function to check all assumptions
+check_captain_beta_comprehensive <- function(data, response_var, predictor_var, model, model_name) {
+  
+  cat("\n")
+  cat(rep("=", 70), "\n", sep="")
+  cat("DIAGNOSTICS FOR:", model_name, "\n")
+  cat(rep("=", 70), "\n", sep="")
+  
+  # 1. Levene's test for homogeneity of variance
+  cat("\n1. LEVENE'S TEST (Homogeneity of Variance):\n")
+  cat("-------------------------------------------\n")
+  levene_formula <- as.formula(paste(response_var, "~ factor(", predictor_var, ")"))
+  levene_result <- leveneTest(levene_formula, data = data)
+  print(levene_result)
+  
+  if(levene_result$`Pr(>F)`[1] < 0.05) {
+    cat("→ Heterogeneity of variance detected (p < 0.05) ✗\n")
+  } else {
+    cat("→ Homogeneity of variance assumption met (p ≥ 0.05) ✓\n")
+  }
+  
+  # 2. Shapiro-Wilk test on beta regression residuals
+  cat("\n2. SHAPIRO-WILK TEST (Normality of Residuals):\n")
+  cat("----------------------------------------------\n")
+  dev_resid <- residuals(model, type = "deviance")
+  shapiro_test <- shapiro.test(dev_resid)
+  cat("W =", round(shapiro_test$statistic, 4), 
+      ", p-value =", format.pval(shapiro_test$p.value, digits = 3), "\n")
+  
+  if(shapiro_test$p.value < 0.05) {
+    cat("→ Residuals are NOT normally distributed (p < 0.05) ✗\n")
+  } else {
+    cat("→ Residuals are approximately normally distributed (p ≥ 0.05) ✓\n")
+  }
+  
+  # 3. Skewness by category
+  cat("\n3. SKEWNESS (Distribution Shape):\n")
+  cat("---------------------------------\n")
+  skewness_stats <- data %>%
+    group_by(!!sym(predictor_var)) %>%
+    summarise(
+      n = n(),
+      skewness = skewness(!!sym(response_var), na.rm = TRUE),
+      .groups = "drop"
+    )
+  print(skewness_stats)
+  
+  overall_skew <- skewness(data[[response_var]], na.rm = TRUE)
+  cat("\nOverall skewness:", round(overall_skew, 2), "\n")
+  
+  # 4. Zero coverage
+  cat("\n4. ZERO COVERAGE:\n")
+  cat("-----------------\n")
+  zero_stats <- data %>%
+    group_by(!!sym(predictor_var)) %>%
+    summarise(
+      n_zeros = sum(!!sym(response_var) == 0, na.rm = TRUE),
+      pct_zeros = round(100 * sum(!!sym(response_var) == 0, na.rm = TRUE) / n(), 2),
+      .groups = "drop"
+    )
+  print(zero_stats)
+  
+  overall_zeros <- sum(data[[response_var]] == 0, na.rm = TRUE)
+  overall_pct_zeros <- round(100 * overall_zeros / nrow(data), 2)
+  cat("\nOverall: ", overall_zeros, " species (", overall_pct_zeros, "%) with zero coverage\n", sep = "")
+  
+  # 5. Cook's distance (influential points)
+  cat("\n5. INFLUENTIAL OBSERVATIONS (Cook's Distance):\n")
+  cat("----------------------------------------------\n")
+  cd <- cooks.distance(model)
+  influential <- which(cd > 4/length(cd))
+  cat("Number of influential points (Cook's D > 4/n):", length(influential), "\n")
+  cat("Percentage of influential points:", 
+      round(100 * length(influential) / length(cd), 2), "%\n")
+  
+  cat("\n")
+  
+  # Return summary for table
+  return(list(
+    levene_f = levene_result$`F value`[1],
+    levene_p = levene_result$`Pr(>F)`[1],
+    shapiro_w = shapiro_test$statistic,
+    shapiro_p = shapiro_test$p.value,
+    overall_skewness = overall_skew,
+    overall_zeros_pct = overall_pct_zeros,
+    n_influential = length(influential),
+    pct_influential = round(100 * length(influential) / length(cd), 2)
+  ))
+}
+
+# Run comprehensive diagnostics for all three models
+iucn_diag <- check_captain_beta_comprehensive(
+  data = model_data,
+  response_var = "IUCN_protection",
+  predictor_var = "IUCN_status",
+  model = iucn_beta,
+  model_name = "CAPTAIN IUCN Model"
+)
+
+fuse_diag <- check_captain_beta_comprehensive(
+  data = model_data,
+  response_var = "FUSE_protection",
+  predictor_var = "FUSE_score",
+  model = fuse_beta,
+  model_name = "CAPTAIN FUSE Model"
+)
+
+edge2_diag <- check_captain_beta_comprehensive(
+  data = model_data,
+  response_var = "EDGE2_protection",
+  predictor_var = "EDGE2_score",
+  model = edge2_beta,
+  model_name = "CAPTAIN EDGE2 Model"
+)
+
+# Create comprehensive summary table
+cat("\n")
+cat(rep("=", 80), "\n", sep="")
+cat("COMPREHENSIVE DIAGNOSTIC SUMMARY\n")
+cat(rep("=", 80), "\n", sep="")
+
+comprehensive_diagnostics <- data.frame(
+  Model = c("CAPTAIN IUCN", "CAPTAIN FUSE", "CAPTAIN EDGE2"),
+  Levene_F = c(iucn_diag$levene_f, fuse_diag$levene_f, edge2_diag$levene_f),
+  Levene_p = c(iucn_diag$levene_p, fuse_diag$levene_p, edge2_diag$levene_p),
+  Shapiro_W = c(iucn_diag$shapiro_w, fuse_diag$shapiro_w, edge2_diag$shapiro_w),
+  Shapiro_p = c(iucn_diag$shapiro_p, fuse_diag$shapiro_p, edge2_diag$shapiro_p),
+  Skewness = c(iucn_diag$overall_skewness, fuse_diag$overall_skewness, edge2_diag$overall_skewness),
+  Zeros_pct = c(iucn_diag$overall_zeros_pct, fuse_diag$overall_zeros_pct, edge2_diag$overall_zeros_pct),
+  Influential_pct = c(iucn_diag$pct_influential, fuse_diag$pct_influential, edge2_diag$pct_influential),
+  Pseudo_R2 = c(iucn_r2, fuse_r2, edge2_r2),
+  Significant = c("Yes (p<0.001)", "Yes (p=0.04)", "Yes (p<0.001)")
+)
+
+# Display with kable
+kable(comprehensive_diagnostics, 
+      format = "html",
+      col.names = c("Model", "Levene F", "Levene p", "Shapiro W", "Shapiro p", 
+                    "Skewness", "Zeros (%)", "Influential (%)", "Pseudo R²", "Result"),
+      caption = "Comprehensive beta regression diagnostic summary for CAPTAIN validation models",
+      digits = c(0, 2, 4, 4, 4, 2, 1, 1, 3, 0),
+      align = c("l", "c", "c", "c", "c", "c", "c", "c", "c", "c")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE,
+                position = "center") %>%
+  column_spec(1, bold = TRUE, width = "150px") %>%
+  row_spec(0, bold = TRUE, background = "#f0f0f0") %>%
+  column_spec(10, bold = TRUE, color = "#38AB38")
+
+cat("\n")
+
 ```
 
 # Manuscript maps
