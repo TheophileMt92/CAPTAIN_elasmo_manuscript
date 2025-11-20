@@ -787,142 +787,170 @@ if(nrow(protected_fractions) == nrow(shark_metrics)) {
   fuse_labels <- paste0(1:5, "\n(n=", fuse_n$n, ")")
   edge2_labels <- paste0(1:5, "\n(n=", edge2_n$n, ")")
   
-  # 1. IUCN plot
-  iucn_plot <- combined_data %>%
-    mutate(
-      IUCN_status = factor(IUCN_original, levels = 1:5, labels = iucn_order),
-      protection_percentage = IUCN_captain * 100
-    ) %>%
-    ggplot(aes(x = IUCN_status, y = protection_percentage)) +
-    geom_jitter(width = 0.1,
-                size = 0.4,
-                alpha = 0.5,
-                color = "darkgray") +
-    stat_summary(fun = mean,
-                 geom = "point",
-                 size = 3,
-                 color = "black") +
-    stat_summary(fun.data = function(x) {
-      mean_val <- mean(x, na.rm = TRUE)
-      sd_val <- sd(x, na.rm = TRUE)
-      return(data.frame(y = mean_val,
-                        ymin = max(0, mean_val - sd_val),
-                        ymax = min(100, mean_val + sd_val)))
-    },
-    geom = "errorbar",
-    width = 0.1,
-    color = "black") +
-    labs(
-      x = "IUCN Red List threat status",
-      y = "Range protected (%)"
-    ) +
-    theme_minimal() +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
-      legend.position = "none",
-      panel.grid.major.x = element_blank(),
-      plot.background = element_rect(fill = "white", color = NA),
-      panel.background = element_rect(fill = "white", color = NA),
-      axis.title.x = element_text(size = 16),
-      axis.title.y = element_text(size = 16),
-      axis.text.x = element_text(size = 14),
-      axis.text.y = element_text(size = 14)
-    ) +
-    scale_x_discrete(limits = iucn_order, labels = iucn_labels) +
-    scale_fill_manual(values = iucn_colors) +
-    scale_color_manual(values = iucn_colors) +
-    scale_y_continuous(limits = c(0, 100),
-                       breaks = seq(0, 100, 25))
-  
-  # 2. FUSE plot
-  fuse_plot <- combined_data %>%
-    mutate(
-      FUSE_category = factor(FUSE_original),
-      protection_percentage = FUSE_captain * 100
-    ) %>%
-    ggplot(aes(x = FUSE_category, y = protection_percentage)) +
-    geom_jitter(width = 0.1,
-                size = 0.4,
-                alpha = 0.5,
-                color = "darkgray") +
-    stat_summary(fun = mean,
-                 geom = "point",
-                 size = 3,
-                 color = "black") +
-    stat_summary(fun.data = function(x) {
-      mean_val <- mean(x, na.rm = TRUE)
-      sd_val <- sd(x, na.rm = TRUE)
-      return(data.frame(y = mean_val,
-                        ymin = max(0, mean_val - sd_val),
-                        ymax = min(100, mean_val + sd_val)))
-    },
-    geom = "errorbar",
-    width = 0.1,
-    color = "black") +
-    labs(
-      x = "FUSE Score",
-      y = "Range protected (%)"
-    ) +
-    theme_minimal() +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
-      legend.position = "none",
-      panel.grid.major.x = element_blank(),
-      plot.background = element_rect(fill = "white", color = NA),
-      panel.background = element_rect(fill = "white", color = NA),
-      axis.title.x = element_text(size = 16),
-      axis.title.y = element_text(size = 16),
-      axis.text.x = element_text(size = 14),
-      axis.text.y = element_text(size = 14)
-    ) +
-    scale_x_discrete(labels = fuse_labels) +
-    scale_y_continuous(limits = c(0, 100),
-                       breaks = seq(0, 100, 25))
-  
-  # 3. EDGE2 plot
-  edge2_plot <- combined_data %>%
-    mutate(
-      EDGE2_category = factor(EDGE2_original),
-      protection_percentage = EDGE2_captain * 100
-    ) %>%
-    ggplot(aes(x = EDGE2_category, y = protection_percentage)) +
-    geom_jitter(width = 0.1,
-                size = 0.4,
-                alpha = 0.5,
-                color = "darkgray") +
-    stat_summary(fun = mean,
-                 geom = "point",
-                 size = 3,
-                 color = "black") +
-    stat_summary(fun.data = function(x) {
-      mean_val <- mean(x, na.rm = TRUE)
-      sd_val <- sd(x, na.rm = TRUE)
-      return(data.frame(y = mean_val,
-                        ymin = max(0, mean_val - sd_val),
-                        ymax = min(100, mean_val + sd_val)))
-    },
-    geom = "errorbar",
-    width = 0.1,
-    color = "black") +
-    labs(
-      x = "EDGE2 Score",
-      y = "Range protected (%)"
-    ) +
-    theme_minimal() +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
-      legend.position = "none",
-      panel.grid.major.x = element_blank(),
-      plot.background = element_rect(fill = "white", color = NA),
-      panel.background = element_rect(fill = "white", color = NA),
-      axis.title.x = element_text(size = 16),
-      axis.title.y = element_text(size = 16),
-      axis.text.x = element_text(size = 14),
-      axis.text.y = element_text(size = 14)
-    ) +
-    scale_x_discrete(labels = edge2_labels) +
-    scale_y_continuous(limits = c(0, 100),
-                       breaks = seq(0, 100, 25))
+  # Define color palettes
+iucn_colors <- c(
+  "LC" = "#38AB38",
+  "NT" = "#58AFFF",
+  "VU" = "#FEC748",
+  "EN" = "#FC7F3F",
+  "CR" = "#D81E05"
+)
+
+# For FUSE - Blues
+fuse_colors <- c(
+  "1" = "#c6dbef",
+  "2" = "#9ecae1",
+  "3" = "#6baed6",
+  "4" = "#3182bd",
+  "5" = "#08519c"
+)
+
+# For EDGE2 - Purples
+edge2_colors <- c(
+  "1" = "#dadaeb",
+  "2" = "#bcbddc",
+  "3" = "#9e9ac8",
+  "4" = "#756bb1",
+  "5" = "#54278f"
+)
+
+# 1. IUCN plot
+iucn_plot <- combined_data %>%
+  mutate(
+    IUCN_status = factor(IUCN_original, levels = 1:5, labels = iucn_order),
+    protection_percentage = IUCN_captain * 100
+  ) %>%
+  ggplot(aes(x = IUCN_status, y = protection_percentage)) +
+  geom_jitter(aes(color = IUCN_status),
+              width = 0.1,
+              size = 0.4,
+              alpha = 0.7) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black") +
+  stat_summary(fun.data = function(x) {
+    mean_val <- mean(x, na.rm = TRUE)
+    se_val <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+    return(data.frame(y = mean_val,
+                      ymin = max(0, mean_val - se_val),
+                      ymax = min(100, mean_val + se_val)))
+  },
+  geom = "errorbar",
+  width = 0.1,
+  color = "black") +
+  labs(
+    x = "IUCN Red List threat status",
+    y = "Range protected (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 20),
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    axis.text.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16)
+  ) +
+  scale_x_discrete(limits = iucn_order, labels = iucn_labels) +
+  scale_color_manual(values = iucn_colors) +
+  scale_y_continuous(limits = c(0, 105),
+                     breaks = seq(0, 100, 25))
+
+# 2. FUSE plot
+fuse_plot <- combined_data %>%
+  mutate(
+    FUSE_category = factor(FUSE_original),
+    protection_percentage = FUSE_captain * 100
+  ) %>%
+  ggplot(aes(x = FUSE_category, y = protection_percentage)) +
+  geom_jitter(aes(color = FUSE_category),
+              width = 0.1,
+              size = 0.4,
+              alpha = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black") +
+  stat_summary(fun.data = function(x) {
+    mean_val <- mean(x, na.rm = TRUE)
+    se_val <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+    return(data.frame(y = mean_val,
+                      ymin = max(0, mean_val - se_val),
+                      ymax = min(100, mean_val + se_val)))
+  },
+  geom = "errorbar",
+  width = 0.1,
+  color = "black") +
+  labs(
+    x = "FUSE Score",
+    y = "Range protected (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 20),
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    axis.text.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16)
+  ) +
+  scale_x_discrete(labels = fuse_labels) +
+  scale_color_manual(values = fuse_colors) +
+  scale_y_continuous(limits = c(0, 105),
+                     breaks = seq(0, 100, 25))
+
+# 3. EDGE2 plot
+edge2_plot <- combined_data %>%
+  mutate(
+    EDGE2_category = factor(EDGE2_original),
+    protection_percentage = EDGE2_captain * 100
+  ) %>%
+  ggplot(aes(x = EDGE2_category, y = protection_percentage)) +
+  geom_jitter(aes(color = EDGE2_category),
+              width = 0.1,
+              size = 0.4,
+              alpha = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black") +
+  stat_summary(fun.data = function(x) {
+    mean_val <- mean(x, na.rm = TRUE)
+    se_val <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+    return(data.frame(y = mean_val,
+                      ymin = max(0, mean_val - se_val),
+                      ymax = min(100, mean_val + se_val)))
+  },
+  geom = "errorbar",
+  width = 0.1,
+  color = "black") +
+  labs(
+    x = "EDGE2 Score",
+    y = "Range protected (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 20),
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    axis.text.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16)
+  ) +
+  scale_x_discrete(labels = edge2_labels) +
+  scale_color_manual(values = edge2_colors) +
+  scale_y_continuous(limits = c(0, 105),
+                     breaks = seq(0, 100, 25))
   
   # Combine the three plots into a grid
   combined_plots <- ggpubr::ggarrange(
@@ -932,7 +960,7 @@ if(nrow(protected_fractions) == nrow(shark_metrics)) {
     ncol = 3,
     nrow = 1,
     labels = c("(A)", "(B)", "(C)"),
-    font.label = list(size = 14,
+    font.label = list(size = 16,
                       face = "bold",
                       hjust = -2,
                       vjust = 1.5)
@@ -941,7 +969,7 @@ if(nrow(protected_fractions) == nrow(shark_metrics)) {
   #print(combined_plots)
   
   # Save combined plot
-  ggsave(here::here("R","Outputs", "Fig.2_combined_protection_dotplots.png"),
+  ggsave(here::here("R","Outputs", "Fig.2_combined_protection_dotplots_2.png"),
          combined_plots, width = 20, height = 6, dpi = 150, bg = "white")
 
   #======================
