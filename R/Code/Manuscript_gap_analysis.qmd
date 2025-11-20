@@ -1313,7 +1313,7 @@ write.csv(ecoregion_ses_stats,
 
 # Relate to IUCN status
 
-## Relate the percentage of species range overlapped by MPAs to the IUCN Red List status 
+## Relate the percentage of species range overlapped by MPAs to the IUCN Red List status
 
 ```{r}
 # Join IUCN and results data
