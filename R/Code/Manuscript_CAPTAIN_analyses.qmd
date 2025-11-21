@@ -1131,7 +1131,7 @@ edge2_plot <- combined_data %>%
 }
 
   # Display the saved image in the Quarto document
-knitr::include_graphics(here::here("R","Outputs", "Fig.2_combined_protection_dotplots.png"))
+knitr::include_graphics(here::here("R","Outputs", "Fig.2_combined_protection_dotplots_2.png"))
 
 #======================
 # COMPREHENSIVE BETA REGRESSION DIAGNOSTICS FOR CAPTAIN MODELS

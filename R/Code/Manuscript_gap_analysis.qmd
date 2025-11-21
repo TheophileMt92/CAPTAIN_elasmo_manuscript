@@ -232,19 +232,20 @@ globe_border <- st_polygon(list(globe_bbox)) %>%
   smoothr::densify(max_distance = 0.5) %>%
   st_transform(crs = mcbryde_thomas_2)
 
-# Create base theme
+# Create base theme with larger text
 my_theme <- theme_minimal() +
   theme(
     legend.position = "bottom",
     legend.direction = "horizontal",
     legend.box = "vertical",
     legend.margin = margin(t = 20, r = 0, b = 0, l = 0),
-    legend.title = element_text(margin = margin(b = 10)),
+    legend.title = element_text(size = 14, margin = margin(b = 10)),
+    legend.text = element_text(size = 12),
     panel.background = element_rect(fill = "white", color = NA),
     plot.background = element_rect(fill = "white", color = NA),
     panel.grid = element_blank(),
-    axis.text = element_blank(),      # Add this line
-    axis.ticks = element_blank()      # Add this line
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
   )
 
 # Calculate the data range for better color scaling
@@ -259,19 +260,15 @@ nt_map_projected <- ggplot() +
   scale_color_viridis_c(
     option = "viridis",
     name = "Mean % range in no-take MPAs",
-    trans = "sqrt",  # Use "log10" for log scale
+    trans = "sqrt",
     breaks = color_breaks,
     guide = guide_colorbar(barwidth = 20, barheight = 0.5, 
                          title.position = "top", title.hjust = 0.5)
   ) +
   coord_sf() +
   labs(
-   # title = "Mean Percentage of Species Range in No-Take MPAs",
-  #  subtitle = "Continental Waters Only (Square Root Scale)",
     x = NULL, y = NULL
   ) +
-#  annotate("text", x = -Inf, y = Inf, label = "(A)", 
-#           hjust = -1, vjust = 2, size = 6, fontface = "bold") +
   my_theme
 
 # Print the projected map
@@ -463,7 +460,7 @@ eco_map <- ggplot() +
   )
 
 # Save ecoregion map
-ggsave(here("Outputs", "ecoregion_NT_coverage_map.png"), eco_map, width = 12, height = 8, dpi = 300)
+ggsave(here("R","Outputs", "ecoregion_NT_coverage_map.png"), eco_map, width = 12, height = 8, dpi = 300)
 
 # 2. Choropleth map of EEZs
 # Join stats back to spatial data
@@ -493,7 +490,7 @@ eez_map <- ggplot() +
   )
 
 # Save EEZ map
-ggsave(here("Outputs", "eez_NT_coverage_map.png"), eez_map, width = 12, height = 8, dpi = 300)
+ggsave(here("R","Outputs", "eez_NT_coverage_map.png"), eez_map, width = 12, height = 8, dpi = 300)
 
 # 3. Bar plots for top regions
 # Top 20 Ecoregions
@@ -514,7 +511,7 @@ top_eco_plot <- ggplot(head(ecoregion_stats, 20), aes(x = reorder(ECOREGION, mea
   )
 
 # Save top ecoregions plot
-ggsave(here("Outputs", "top_ecoregions_NT_coverage.png"), top_eco_plot, width = 10, height = 8, dpi = 300)
+ggsave(here("R","Outputs", "top_ecoregions_NT_coverage.png"), top_eco_plot, width = 10, height = 8, dpi = 300)
 
 # Bottom 20 Ecoregions
 bottom_eco_plot <- ggplot(tail(ecoregion_stats, 20), aes(x = reorder(ECOREGION, mean_NT_coverage), y = mean_NT_coverage)) +
@@ -534,7 +531,7 @@ bottom_eco_plot <- ggplot(tail(ecoregion_stats, 20), aes(x = reorder(ECOREGION, 
   )
 
 # Save bottom ecoregions plot
-ggsave(here("Outputs", "bottom_ecoregions_NT_coverage.png"), bottom_eco_plot, width = 10, height = 8, dpi = 300)
+ggsave(here("R","Outputs", "bottom_ecoregions_NT_coverage.png"), bottom_eco_plot, width = 10, height = 8, dpi = 300)
 
 # Top 20 EEZs
 top_eez_plot <- ggplot(head(eez_stats, 20), aes(x = reorder(TERRITORY1, mean_NT_coverage), y = mean_NT_coverage)) +
@@ -554,7 +551,7 @@ top_eez_plot <- ggplot(head(eez_stats, 20), aes(x = reorder(TERRITORY1, mean_NT_
   )
 
 # Save top EEZs plot
-ggsave(here("Outputs", "top_eezs_NT_coverage.png"), top_eez_plot, width = 10, height = 8, dpi = 300)
+ggsave(here("R","Outputs", "top_eezs_NT_coverage.png"), top_eez_plot, width = 10, height = 8, dpi = 300)
 ```
 
 # Null model of MPA placement within EEZs
@@ -723,7 +720,7 @@ random_NT <- read.csv(here::here("R","Outputs", "species_random_No-take MPAs_cov
 
 # Reshape actual coverage data to long format (NT only)
 actual_long <- actual_coverage %>%
-  select(species, NT) %>%
+  dplyr::select(species, NT) %>%
   rename(actual_percentage = NT)
 
 # Function to merge and compare actual vs random data
@@ -841,18 +838,21 @@ stacked_bar_chart <- ggplot(summary_NT, aes(x = 1, y = Percentage, fill = Repres
                     breaks = c("Under-represented", "Equally represented", "Over-represented")) +
   geom_text(aes(label = sprintf("%.2f%%", Percentage)),
             position = position_stack(vjust = 0.5),
-            color = "black", size = 4) +
+            color = "black", size = 5) +
   coord_flip() +
   theme_minimal() +
   labs(
     x = NULL,
     y = "Percentage of species (%)"
   ) +
-  scale_y_continuous(expand = c(0, 0), limits = c(0, 100)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 105)) +
   theme(
     legend.position = "top",
     legend.title = element_blank(),
+    legend.text = element_text(size = 12),
     axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
     axis.ticks.y = element_blank(),
     panel.grid.major.y = element_blank(),
     panel.grid.minor.y = element_blank()
@@ -1140,14 +1140,15 @@ globe_border <- st_polygon(list(globe_bbox)) %>%
   smoothr::densify(max_distance = 0.5) %>%
   st_transform(crs = mcbryde_thomas_2)
 
-# Create base theme
+# Create base theme with larger text
 my_theme <- theme_minimal() +
   theme(
     legend.position = "bottom",
     legend.direction = "horizontal",
     legend.box = "vertical",
     legend.margin = margin(t = 20, r = 0, b = 0, l = 0),
-    legend.title = element_text(margin = margin(b = 10)),
+    legend.title = element_text(size = 14, margin = margin(b = 10)),
+    legend.text = element_text(size = 12),
     panel.background = element_rect(fill = "white", color = NA),
     plot.background = element_rect(fill = "white", color = NA),
     panel.grid = element_blank(),
@@ -1163,9 +1164,9 @@ continental_plot_NT <- ggplot() +
   scale_color_gradient2(
     low = "#b2182b", mid = "#f0f0f0", high = "#2166ac", 
     midpoint = 0,
-# Note: The color scale is manually limited to [-3, 3] to improve visual contrast.
-# Values outside this range are squished to the nearest limit (using oob = scales::squish),
-# which prevents extreme SES values (e.g., -10 or +5) from dominating the color scale.
+    # Note: The color scale is manually limited to [-3, 3] to improve visual contrast.
+    # Values outside this range are squished to the nearest limit (using oob = scales::squish),
+    # which prevents extreme SES values (e.g., -10 or +5) from dominating the color scale.
     limits = c(-3, 3),
     oob = scales::squish,
     name = "Mean SES",
@@ -1257,7 +1258,7 @@ ses_eco_map <- ggplot() +
 # Print and save the map
 cat("Mean SES per ecoregion:\n")
 print(ses_eco_map)
-ggsave(here("Outputs", "ecoregion_SES_map_NT_clean.png"), 
+ggsave(here("R","Outputs", "ecoregion_SES_map_NT_clean.png"), 
        ses_eco_map, width = 12, height = 8, dpi = 300)
 
 # Top 20 Ecoregions by Mean SES
@@ -1297,12 +1298,12 @@ bottom_ses_plot <- ggplot(tail(ecoregion_ses_stats, 20),
 # Print and save plots
 cat("Top 20 Ecoregions by Mean SES:\n")
 print(top_ses_plot)
-ggsave(here("Outputs", "top_ecoregions_SES_NT_clean.png"), 
+ggsave(here("R","Outputs", "top_ecoregions_SES_NT_clean.png"), 
        top_ses_plot, width = 10, height = 8, dpi = 300)
 
 cat("Bottom 20 Ecoregions by Mean SES:\n")
 print(bottom_ses_plot)
-ggsave(here("Outputs", "bottom_ecoregions_SES_NT_clean.png"), 
+ggsave(here("R","Outputs", "bottom_ecoregions_SES_NT_clean.png"), 
        bottom_ses_plot, width = 10, height = 8, dpi = 300)
 
 # Save ecoregion statistics
@@ -1557,7 +1558,7 @@ if (nrow(qr_clean) > 0) {
   # We need to convert IUCN_status factor levels to numeric positions for plotting
   qr_lines_categorical <- data.frame()
   
-  for (tau in fitted_quantiles) {
+  for (tau in quantiles) {
     qr_model <- rq(NT ~ iucn_GE, tau = tau, data = results_IUCN_filtered)
     
     # Predict for each IUCN category (0-4)
@@ -1661,7 +1662,8 @@ if (nrow(qr_clean) > 0) {
     dpi = 300,
     bg = "white"
   )
-  
+} # Close the if (nrow(qr_clean) > 0) statement
+
 #======================
 # Beta Regression for No-take MPAs
 #======================
@@ -1728,26 +1730,30 @@ rdplot_points <- ggplot(notake_mpa_iucn,
               width = 0.1, 
               size = 1.5, 
               alpha = 0.6) +
-  # Mean and SD statistics
+  # Mean and SE statistics
   stat_summary(fun = mean, 
                geom = "point", 
                size = 3, 
                color = "black") +
   stat_summary(fun.data = function(x) {
     mean_val <- mean(x, na.rm = TRUE)
-    sd_val <- sd(x, na.rm = TRUE)
+    se_val <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))  # SE = SD / sqrt(n)
     return(data.frame(y = mean_val, 
-                      ymin = max(0, mean_val - sd_val),
-                      ymax = mean_val + sd_val))
+                      ymin = max(0, mean_val - se_val),
+                      ymax = mean_val + se_val))
   },
   geom = "errorbar", 
   width = 0.1, 
   color = "black") +
   labs(x = "IUCN Red List threat status", 
-       y = "(%) Range within no-take MPAs") +
+       y = "Range protected (%)") +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
     legend.position = "none",
     panel.grid.major.x = element_blank()
   ) +
@@ -1796,7 +1802,7 @@ final_plot_combined = ggpubr::ggarrange(
 print(final_plot_combined)
 
 # Define the output path using `here`
-output_path <- here::here("R","Outputs", "Fig_1_combined_points_3.png")
+output_path <- here::here("R","Outputs", "Fig_1_combined_points_4.png")
 
 # Save the final plot using `ggsave`
 ggsave(
@@ -1805,9 +1811,9 @@ ggsave(
   width = 8,                 # Width of the output (in inches)
   height = 17.35,               # Height of the output (in inches)
   dpi = 300, # Resolution (300 DPI for high quality)
-  bg = "white", 
+  bg = "white" 
 )
 
 # Display the saved image in the Quarto document
-knitr::include_graphics(here::here("R","Outputs", "Fig_1_combined_points_3.png"))
+knitr::include_graphics(here::here("R","Outputs", "Fig_1_combined_points_4.png"))
 ```

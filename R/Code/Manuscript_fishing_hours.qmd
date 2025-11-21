@@ -646,7 +646,7 @@ results_df <- data.frame(
 )
 
 # Create and save the table as HTML
-table_output <- kable(results_df, format = "html", digits = 3,
+table_output <- kable(results_df, format = "html", digits = 2,
       col.names = c("Metric", "No transform", "Fishing hours log", "Presence score log", "Both log"),
       caption = "Model performance comparison") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
@@ -787,7 +787,7 @@ colnames(feature_importance) <- c("Feature", "%IncMSE", "IncNodePurity")
 feature_importance <- feature_importance[order(-feature_importance$`%IncMSE`), ]
 
 # Create the table
-table_output <- kable(feature_importance, format = "html", digits = 4, 
+table_output <- kable(feature_importance, format = "html", digits = 2, 
       col.names = c("Feature", "%IncMSE", "IncNodePurity"),
       caption = "Feature importance for log-transformed fishing hours model") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
