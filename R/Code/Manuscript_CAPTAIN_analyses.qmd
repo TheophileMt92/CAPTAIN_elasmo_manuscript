@@ -2710,7 +2710,6 @@ map_mean_fei <- ggplot() +
   geom_sf(data = globe_border, fill = NA, color = "lightgrey", size = 0.5) +
   scale_color_viridis_c(
     option = "inferno",
-    direction = -1,
     name = "Mean FEI",
     guide = guide_colorbar(barwidth = 20, barheight = 0.5,
                            title.position = "top", title.hjust = 0.5)
@@ -2825,5 +2824,562 @@ saveRDS(cell_metrics, here::here("R", "Data", "Cell_FEI_SFEI_metrics.rds"))
 write_csv(cell_metrics, here::here("R", "Outputs", "Cell_FEI_SFEI_metrics.csv"))
 
 cat("\nCell-level metrics saved.\n")
+
+```
+
+
+## Barplots of FEI and SFEI 
+```{r}
+#| label: fei-sfei-species-histograms
+#| echo: true
+#| warning: false
+#| message: false
+#| fig-width: 14
+#| fig-height: 6
+
+#======================
+# SPECIES-LEVEL FEI AND SFEI BAR PLOTS
+#======================
+
+# Prepare data
+plot_data <- SFEI_results %>%
+  filter(!is.na(SFEI), !is.na(IUCN), !is.na(FEI_observed))
+
+# Define IUCN labels and colors
+iucn_labels <- c("1" = "LC", "2" = "NT", "3" = "VU", "4" = "EN", "5" = "CR")
+iucn_colors <- c(
+  "LC" = "#38AB38",
+  "NT" = "#58AFFF", 
+  "VU" = "#FEC748",
+  "EN" = "#FC7F3F",
+  "CR" = "#D81E05"
+)
+
+plot_data <- plot_data %>%
+  mutate(IUCN_label = factor(iucn_labels[as.character(IUCN)], 
+                              levels = c("LC", "NT", "VU", "EN", "CR")))
+
+# --- 1. FEI bar plot (species ordered by increasing FEI) ---
+fei_bar_data <- plot_data %>%
+  arrange(FEI_observed) %>%
+  mutate(species_order = row_number())
+
+fei_barplot <- ggplot(fei_bar_data, aes(x = species_order, y = FEI_observed, fill = IUCN_label)) +
+  geom_bar(stat = "identity", width = 1) +
+  scale_fill_manual(values = iucn_colors, name = "IUCN Status") +
+  labs(
+    title = "Fishing Exposure Index (FEI)",
+    x = "Species",
+    y = "FEI (log fishing hours)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
+# --- 1. FEI bar plot (species ordered by increasing FEI) ---
+fei_bar_data <- plot_data %>%
+  arrange(FEI_observed) %>%
+  mutate(species_order = row_number())
+
+# Get x-axis range for rectangles
+n_species <- nrow(fei_bar_data)
+
+# Calculate n and % per FEI category
+n_low <- sum(fei_bar_data$FEI_observed <= 4)
+n_moderate <- sum(fei_bar_data$FEI_observed > 4 & fei_bar_data$FEI_observed <= 5.5)
+n_high <- sum(fei_bar_data$FEI_observed > 5.5 & fei_bar_data$FEI_observed <= 7)
+n_veryhigh <- sum(fei_bar_data$FEI_observed > 7)
+
+pct_low <- round(100 * n_low / n_species, 1)
+pct_moderate <- round(100 * n_moderate / n_species, 1)
+pct_high <- round(100 * n_high / n_species, 1)
+pct_veryhigh <- round(100 * n_veryhigh / n_species, 1)
+
+fei_barplot <- ggplot(fei_bar_data, aes(x = species_order, y = FEI_observed, fill = IUCN_label)) +
+  # Background panels for FEI categories
+  annotate("rect", xmin = 0.5, xmax = n_species + 0.5, ymin = 0, ymax = 4, 
+           fill = "#77dd77", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species + 0.5, ymin = 4, ymax = 5.5, 
+           fill = "#fdfd96", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species + 0.5, ymin = 5.5, ymax = 7, 
+           fill = "#ffb347", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species + 0.5, ymin = 7, ymax = 12, 
+           fill = "#ff6961", alpha = 0.5) +
+  # Bars
+  geom_bar(stat = "identity", width = 1) +
+  scale_fill_manual(values = iucn_colors, name = "IUCN Status") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    title = "Fishing Exposure Index (FEI)",
+    x = "Species",
+    y = "FEI (log fishing hours)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  ) +
+  # Category labels with n and %
+  annotate("text", x = 15, y = 2, 
+           label = paste0("Low (n=", n_low, ", ", pct_low, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = 4.75, 
+           label = paste0("Moderate (n=", n_moderate, ", ", pct_moderate, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = 6.25, 
+           label = paste0("High (n=", n_high, ", ", pct_high, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = 9, 
+           label = paste0("Very high (n=", n_veryhigh, ", ", pct_veryhigh, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20")
+
+# --- 2. SFEI bar plot (species ordered by increasing SFEI) ---
+sfei_bar_data <- plot_data %>%
+  arrange(SFEI) %>%
+  mutate(species_order = row_number())
+
+# Get range
+n_species_sfei <- nrow(sfei_bar_data)
+max_sfei <- max(sfei_bar_data$SFEI, na.rm = TRUE)
+min_sfei <- min(sfei_bar_data$SFEI, na.rm = TRUE)
+
+# Calculate n and % per SFEI category
+n_underexposed <- sum(sfei_bar_data$SFEI <= 0)
+n_moderate_over <- sum(sfei_bar_data$SFEI > 0 & sfei_bar_data$SFEI <= 1.96)
+n_highly_over <- sum(sfei_bar_data$SFEI > 1.96)
+
+pct_underexposed <- round(100 * n_underexposed / n_species_sfei, 1)
+pct_moderate_over <- round(100 * n_moderate_over / n_species_sfei, 1)
+pct_highly_over <- round(100 * n_highly_over / n_species_sfei, 1)
+
+sfei_barplot <- ggplot(sfei_bar_data, aes(x = species_order, y = SFEI, fill = IUCN_label)) +
+  # Background panels for SFEI categories
+  annotate("rect", xmin = 0.5, xmax = n_species_sfei + 0.5, ymin = min_sfei - 1, ymax = 0, 
+           fill = "#77dd77", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species_sfei + 0.5, ymin = 0, ymax = 1.96, 
+           fill = "#fdfd96", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species_sfei + 0.5, ymin = 1.96, ymax = max_sfei + 5, 
+           fill = "#ff6961", alpha = 0.5) +
+  # Reference lines
+  geom_hline(yintercept = 1.96, linetype = "dashed", color = "black", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  # Bars
+  geom_bar(stat = "identity", width = 1) +
+  scale_fill_manual(values = iucn_colors, name = "IUCN Status") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    title = "Standardized Fishing Exposure Index (SFEI)",
+    x = "Species",
+    y = "SFEI (Z-score)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  ) +
+  # Category labels with n and %
+  annotate("text", x = 15, y = min_sfei / 2, 
+           label = paste0("Underexposed (n=", n_underexposed, ", ", pct_underexposed, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = 6, 
+           label = paste0("Moderately overexposed (n=", n_moderate_over, ", ", pct_moderate_over, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = max_sfei * 0.7, 
+           label = paste0("Highly overexposed (n=", n_highly_over, ", ", pct_highly_over, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20")
+
+# --- 3. Combine plots ---
+combined_barplots <- ggpubr::ggarrange(
+  fei_barplot, sfei_barplot,
+  ncol = 2, nrow = 1,
+  common.legend = TRUE,
+  legend = "bottom",
+  labels = c("(A)", "(B)"),
+  font.label = list(size = 14, face = "bold")
+)
+
+print(combined_barplots)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_FEI_SFEI_species_barplots.png"),
+  combined_barplots,
+  width = 14, height = 6, dpi = 300, bg = "white"
+)
+
+cat("Species barplots saved.\n")
+```
+
+## FEI and SFEI accross IUCN status
+```{r}
+#| label: fei-sfei-iucn-analysis
+#| echo: true
+#| warning: false
+#| message: false
+#| fig-width: 14
+#| fig-height: 6
+
+#======================
+# FISHING EXPOSURE VS IUCN THREAT STATUS ANALYSIS
+#======================
+
+library(DescTools)
+library(moments)
+library(quantreg)
+
+# Prepare data
+fei_iucn_data <- SFEI_results %>%
+  filter(!is.na(SFEI), !is.na(IUCN), !is.na(FEI_observed)) %>%
+  mutate(
+    IUCN_status = case_when(
+      IUCN == 1 ~ "LC",
+      IUCN == 2 ~ "NT",
+      IUCN == 3 ~ "VU",
+      IUCN == 4 ~ "EN",
+      IUCN == 5 ~ "CR",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
+  filter(IUCN_status != "Unknown")
+
+# Define IUCN colors and order
+iucn_colors <- c(
+  "LC" = "#38AB38",
+  "NT" = "#58AFFF",
+  "VU" = "#FEC748",
+  "EN" = "#FC7F3F",
+  "CR" = "#D81E05"
+)
+iucn_order <- c("LC", "NT", "VU", "EN", "CR")
+
+#======================
+# 1. SUMMARY STATISTICS
+#======================
+
+cat("=== FEI SUMMARY STATISTICS BY IUCN STATUS ===\n\n")
+
+fei_summary <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    n = n(),
+    mean_FEI = mean(FEI_observed, na.rm = TRUE),
+    median_FEI = median(FEI_observed, na.rm = TRUE),
+    sd_FEI = sd(FEI_observed, na.rm = TRUE),
+    min_FEI = min(FEI_observed, na.rm = TRUE),
+    max_FEI = max(FEI_observed, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+print(fei_summary)
+
+cat("\n=== SFEI SUMMARY STATISTICS BY IUCN STATUS ===\n\n")
+
+sfei_summary <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    n = n(),
+    mean_SFEI = mean(SFEI, na.rm = TRUE),
+    median_SFEI = median(SFEI, na.rm = TRUE),
+    sd_SFEI = sd(SFEI, na.rm = TRUE),
+    pct_highly_overexposed = round(100 * sum(SFEI > 1.96) / n(), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+print(sfei_summary)
+
+# Skewness
+cat("\n=== DISTRIBUTION SHAPE (Skewness) ===\n")
+
+skewness_fei <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    skewness_FEI = skewness(FEI_observed, na.rm = TRUE),
+    skewness_SFEI = skewness(SFEI, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+print(skewness_fei)
+
+#======================
+# 2. NON-PARAMETRIC STATISTICAL TESTS
+#======================
+
+cat("\n=== NON-PARAMETRIC STATISTICAL TESTS ===\n")
+
+# --- FEI Tests ---
+cat("\n--- FEI TESTS ---\n")
+
+# Jonckheere-Terpstra test (for increasing trend: do more threatened species have higher FEI?)
+cat("\n1. JONCKHEERE-TERPSTRA TEST (FEI ~ IUCN, increasing):\n")
+jt_fei <- JonckheereTerpstraTest(fei_iucn_data$FEI_observed,
+                                  fei_iucn_data$IUCN,
+                                  alternative = "increasing")
+print(jt_fei)
+
+# Spearman correlation
+cat("\n2. SPEARMAN RANK CORRELATION (FEI ~ IUCN):\n")
+spearman_fei <- cor.test(fei_iucn_data$IUCN,
+                          fei_iucn_data$FEI_observed,
+                          method = "spearman")
+print(spearman_fei)
+
+# KS test (LC vs CR)
+cat("\n3. KOLMOGOROV-SMIRNOV TEST (FEI: LC vs CR):\n")
+ks_fei <- ks.test(
+  fei_iucn_data$FEI_observed[fei_iucn_data$IUCN_status == "LC"],
+  fei_iucn_data$FEI_observed[fei_iucn_data$IUCN_status == "CR"]
+)
+print(ks_fei)
+
+# --- SFEI Tests ---
+cat("\n--- SFEI TESTS ---\n")
+
+# Jonckheere-Terpstra test
+cat("\n1. JONCKHEERE-TERPSTRA TEST (SFEI ~ IUCN, increasing):\n")
+jt_sfei <- JonckheereTerpstraTest(fei_iucn_data$SFEI,
+                                   fei_iucn_data$IUCN,
+                                   alternative = "increasing")
+print(jt_sfei)
+
+# Spearman correlation
+cat("\n2. SPEARMAN RANK CORRELATION (SFEI ~ IUCN):\n")
+spearman_sfei <- cor.test(fei_iucn_data$IUCN,
+                           fei_iucn_data$SFEI,
+                           method = "spearman")
+print(spearman_sfei)
+
+# KS test (LC vs CR)
+cat("\n3. KOLMOGOROV-SMIRNOV TEST (SFEI: LC vs CR):\n")
+ks_sfei <- ks.test(
+  fei_iucn_data$SFEI[fei_iucn_data$IUCN_status == "LC"],
+  fei_iucn_data$SFEI[fei_iucn_data$IUCN_status == "CR"]
+)
+print(ks_sfei)
+
+#======================
+# 3. QUANTILE REGRESSION
+#======================
+
+cat("\n=== QUANTILE REGRESSION ANALYSIS ===\n")
+
+quantiles <- seq(0.3, 0.9, by = 0.1)
+
+# --- FEI Quantile Regression ---
+qr_fei_results <- data.frame()
+
+for (tau in quantiles) {
+  tryCatch({
+    qr_model <- rq(FEI_observed ~ IUCN, tau = tau, data = fei_iucn_data)
+    qr_summary <- summary(qr_model, se = "boot", R = 500)
+    coef_table <- qr_summary$coefficients
+    
+    temp_result <- data.frame(
+      Quantile = paste0("Q", tau * 100),
+      Tau = tau,
+      Slope = coef_table[2, 1],
+      SE = coef_table[2, 2],
+      t_value = coef_table[2, 3],
+      p_value = coef_table[2, 4]
+    )
+    
+    qr_fei_results <- rbind(qr_fei_results, temp_result)
+  }, error = function(e) {
+    cat(paste("Error at tau =", tau, ":", e$message, "\n"))
+  })
+}
+
+qr_fei_results$Significant <- ifelse(qr_fei_results$p_value < 0.05, "Yes*", "No")
+
+cat("\nFEI Quantile Regression Results:\n")
+print(qr_fei_results)
+
+# --- SFEI Quantile Regression ---
+qr_sfei_results <- data.frame()
+
+for (tau in quantiles) {
+  tryCatch({
+    qr_model <- rq(SFEI ~ IUCN, tau = tau, data = fei_iucn_data)
+    qr_summary <- summary(qr_model, se = "boot", R = 500)
+    coef_table <- qr_summary$coefficients
+    
+    temp_result <- data.frame(
+      Quantile = paste0("Q", tau * 100),
+      Tau = tau,
+      Slope = coef_table[2, 1],
+      SE = coef_table[2, 2],
+      t_value = coef_table[2, 3],
+      p_value = coef_table[2, 4]
+    )
+    
+    qr_sfei_results <- rbind(qr_sfei_results, temp_result)
+  }, error = function(e) {
+    cat(paste("Error at tau =", tau, ":", e$message, "\n"))
+  })
+}
+
+qr_sfei_results$Significant <- ifelse(qr_sfei_results$p_value < 0.05, "Yes*", "No")
+
+cat("\nSFEI Quantile Regression Results:\n")
+print(qr_sfei_results)
+
+#======================
+# 4. VISUALIZATIONS
+#======================
+
+# Calculate sample sizes for labels
+n_per_category <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+x_labels <- paste0(iucn_order, "\n(n=", n_per_category$n, ")")
+
+# --- Panel A: FEI by IUCN ---
+panel_fei <- ggplot(fei_iucn_data,
+                     aes(x = factor(IUCN_status, levels = iucn_order),
+                         y = FEI_observed)) +
+  geom_jitter(aes(color = IUCN_status),
+              width = 0.15,
+              size = 1.5,
+              alpha = 0.6) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black") +
+  stat_summary(fun.data = function(x) {
+    mean_val <- mean(x, na.rm = TRUE)
+    se_val <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+    return(data.frame(y = mean_val,
+                      ymin = mean_val - se_val,
+                      ymax = mean_val + se_val))
+  },
+  geom = "errorbar",
+  width = 0.15,
+  color = "black") +
+  scale_color_manual(values = iucn_colors) +
+  scale_x_discrete(labels = x_labels) +
+  labs(
+    x = "IUCN Red List threat status",
+    y = "FEI (log fishing hours)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+
+# --- Panel B: SFEI by IUCN ---
+panel_sfei <- ggplot(fei_iucn_data,
+                      aes(x = factor(IUCN_status, levels = iucn_order),
+                          y = SFEI)) +
+  geom_hline(yintercept = 1.96, linetype = "dashed", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.3) +
+  geom_jitter(aes(color = IUCN_status),
+              width = 0.15,
+              size = 1.5,
+              alpha = 0.6) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black") +
+  stat_summary(fun.data = function(x) {
+    mean_val <- mean(x, na.rm = TRUE)
+    se_val <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+    return(data.frame(y = mean_val,
+                      ymin = mean_val - se_val,
+                      ymax = mean_val + se_val))
+  },
+  geom = "errorbar",
+  width = 0.15,
+  color = "black") +
+  scale_color_manual(values = iucn_colors) +
+  scale_x_discrete(labels = x_labels) +
+  annotate("text", x = 5.4, y = 1.96, label = "p = 0.05", 
+           color = "red", size = 3, hjust = 0) +
+  labs(
+    x = "IUCN Red List threat status",
+    y = "SFEI (Z-score)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  coord_cartesian(clip = "off")
+
+# Combine panels
+fig_fei_sfei_iucn <- ggarrange(
+  panel_fei, panel_sfei,
+  ncol = 2, nrow = 1,
+  labels = c("(A)", "(B)"),
+  font.label = list(size = 14, face = "bold")
+)
+
+print(fig_fei_sfei_iucn)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_FEI_SFEI_by_IUCN.png"),
+  fig_fei_sfei_iucn,
+  width = 14, height = 6, dpi = 300, bg = "white"
+)
+
+#======================
+# 5. SUMMARY TABLE FOR MANUSCRIPT
+#======================
+
+cat("\n=== SUMMARY FOR MANUSCRIPT ===\n\n")
+
+# Create combined summary table
+summary_table <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    n = n(),
+    FEI_mean = round(mean(FEI_observed, na.rm = TRUE), 2),
+    FEI_se = round(sd(FEI_observed, na.rm = TRUE) / sqrt(n()), 2),
+    SFEI_mean = round(mean(SFEI, na.rm = TRUE), 2),
+    SFEI_se = round(sd(SFEI, na.rm = TRUE) / sqrt(n()), 2),
+    pct_overexposed = round(100 * sum(SFEI > 1.96) / n(), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+kable(summary_table,
+      format = "html",
+      col.names = c("IUCN", "n", "FEI mean", "FEI SE", 
+                    "SFEI mean", "SFEI SE", "% Highly overexposed"),
+      caption = "Fishing exposure metrics by IUCN threat status") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+# Save summary
+write_csv(summary_table, here::here("R", "Outputs", "FEI_SFEI_by_IUCN_summary.csv"))
+
+cat("\nAnalysis complete.\n")
 
 ```
