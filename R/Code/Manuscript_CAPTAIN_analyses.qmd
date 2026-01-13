@@ -83,6 +83,11 @@ shark_metrics <- read_csv(here::here("R","Data", "continental_shark_conservation
 # Load fishing data
 load(here::here("R","Data","Predicted_Fishing_Hours_05Deg.Rdata"))
 
+# Ecoregion shapefile
+meow_ecos <- st_read(here("R","Data", "meow_ecos", "meow_ecos.shp"), quiet = TRUE)
+
+# High seas shapefile 
+High_seas = st_read(here::here("R","Data", "World_High_Seas_v2_20241010", "High_Seas_v2.shp"), quiet = TRUE)
 ```
 
 # IUCN continental 0.1 budget
@@ -2276,7 +2281,8 @@ FEI_top20 <- FEI_results %>%
   dplyr::select(Species, IUCN, FUSE, EDGE2, FEI_log, Range_Size, Fishing_Data_Coverage) %>%
   head(20)
 
-kable(FEI_top20,
+# Save the FEI top 20 species table
+fei_top20_table <- kable(FEI_top20,
       format = "html",
       digits = 2,
       col.names = c("Species", "IUCN", "FUSE", "EDGE2", "FEI (log)", 
@@ -2284,6 +2290,12 @@ kable(FEI_top20,
       caption = "Top 20 species by Fishing Exposure Index (FEI)") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE)
+
+save_kable(fei_top20_table, 
+           file = here::here("R", "Outputs", "Table_top20_FEI_species.png"),
+           zoom = 2)
+
+cat("FEI top 20 species table saved.\n")
 
 # --- 8. Save FEI results ---
 saveRDS(FEI_results, here::here("R", "Data", "Species_FEI_results.rds"))
@@ -2507,20 +2519,6 @@ cat("\nSFEI distribution:\n")
 print(summary(SFEI_results$SFEI))
 
 # --- 9. Top highly overexposed species ---
-# Fix duplicate columns from double-join
-SFEI_results <- SFEI_results %>%
-  rename(
-    Range_Size = Range_Size.x,
-    Fishing_Data_Coverage = Fishing_Data_Coverage.x,
-    IUCN = IUCN.x,
-    FUSE = FUSE.x,
-    EDGE2 = EDGE2.x
-  ) %>%
-  dplyr::select(-ends_with(".y"))
-
-# Verify
-cat("Columns after cleanup:\n")
-print(names(SFEI_results))
 
 SFEI_highly_overexposed <- SFEI_results %>%
   filter(Exposure_Category == "Highly overexposed") %>%
@@ -2528,13 +2526,20 @@ SFEI_highly_overexposed <- SFEI_results %>%
   dplyr::select(Species, IUCN, FUSE, EDGE2, SFEI, FEI_observed, p_value) %>%
   head(20)
 
-kable(SFEI_highly_overexposed,
+# Save the SFEI highly overexposed species table
+sfei_overexposed_table <- kable(SFEI_highly_overexposed,
       format = "html",
       digits = c(0, 0, 0, 0, 2, 2, 4),
       col.names = c("Species", "IUCN", "FUSE", "EDGE2", "SFEI", "FEI obs", "p-value"),
       caption = "Top 20 highly overexposed species (SFEI > 1.96)") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE)
+
+save_kable(sfei_overexposed_table, 
+           file = here::here("R", "Outputs", "Table_top20_SFEI_overexposed_species.png"),
+           zoom = 2)
+
+cat("SFEI overexposed species table saved.\n")
 
 # --- 10. High-conflict species (threatened + highly overexposed) ---
 conflict_species <- SFEI_results %>%
@@ -2548,7 +2553,7 @@ cat("\n=== HIGH-CONFLICT SPECIES ===\n")
 cat("Threatened species (VU, EN, CR) that are highly overexposed:", 
     nrow(conflict_species), "\n\n")
 
-kable(conflict_species %>% 
+conflict_table <- kable(conflict_species %>% 
         dplyr::select(Species, IUCN, FUSE, EDGE2, SFEI, FEI_observed) %>%
         head(20),
       format = "html",
@@ -2557,6 +2562,11 @@ kable(conflict_species %>%
       caption = "High-conflict species: threatened and highly overexposed to fishing") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE)
+
+# Save as PNG
+save_kable(conflict_table, 
+           file = here::here("R", "Outputs", "Table_high_conflict_species.png"),
+           zoom = 2)  # zoom increases resolution
 
 # --- 11. Save SFEI results ---
 saveRDS(SFEI_results, here::here("R", "Data", "Species_SFEI_results.rds"))
@@ -2825,6 +2835,393 @@ write_csv(cell_metrics, here::here("R", "Outputs", "Cell_FEI_SFEI_metrics.csv"))
 
 cat("\nCell-level metrics saved.\n")
 
+```
+
+
+## Ecoregion breakdown of FEI and SFEI
+```{r}
+#| label: fei-sfei-ecoregion-analysis
+#| echo: true
+#| warning: false
+#| message: false
+#| fig-width: 12
+#| fig-height: 8
+
+#======================
+# FEI AND SFEI BREAKDOWN BY ECOREGION
+#======================
+
+# --- 0. Filter to continental waters only ---
+cat("Filtering to continental waters...\n")
+
+# Create high seas template raster using terra
+template_raster <- rast(ext(High_seas), resolution = 0.5)
+highseas_raster <- rasterize(vect(High_seas), template_raster, field = 1, background = 0)
+
+# Convert cell_metrics to terra SpatVector for extraction
+cell_points <- vect(as.data.frame(cell_metrics),
+                    geom = c("Longitude", "Latitude"),
+                    crs = crs(highseas_raster))
+
+# Extract values from highseas raster
+highseas_values <- terra::extract(highseas_raster, cell_points)
+
+# Add highseas classification back to the dataframe
+cell_metrics$is_highseas <- highseas_values[, 2]
+cell_metrics$is_highseas[is.na(cell_metrics$is_highseas)] <- 0
+
+# Filter to keep only continental waters
+cell_metrics_continental <- cell_metrics %>%
+  filter(is_highseas == 0, !is.na(mean_FEI))
+
+cat("Continental cells:", nrow(cell_metrics_continental), 
+    "out of", nrow(cell_metrics), "\n")
+
+# --- 1. Intersect with ecoregions (not join) ---
+cat("Intersecting with ecoregions...\n")
+
+grid_sf <- cell_metrics_continental %>%
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326)
+
+meow_ecos <- st_transform(meow_ecos, st_crs(grid_sf))
+meow_ecos <- st_make_valid(meow_ecos)
+sf_use_s2(FALSE)
+
+# st_intersection keeps only cells INSIDE ecoregion polygons
+grid_ecoregions <- st_intersection(grid_sf, meow_ecos)
+
+sf_use_s2(TRUE)
+cat("Cells within ecoregions:", nrow(grid_ecoregions), "\n")
+
+# --- 2. Calculate ecoregion-level statistics ---
+ecoregion_stats <- grid_ecoregions %>%
+  st_drop_geometry() %>%
+  filter(!is.na(ECOREGION)) %>%
+  group_by(ECOREGION) %>%
+  summarise(
+    PROVINCE = first(PROVINCE),
+    REALM = first(REALM),
+    mean_FEI = mean(mean_FEI, na.rm = TRUE),
+    sd_FEI = sd(mean_FEI, na.rm = TRUE),
+    mean_SFEI = mean(mean_SFEI, na.rm = TRUE),
+    sd_SFEI = sd(mean_SFEI, na.rm = TRUE),
+    mean_richness_overexposed = mean(richness_highly_overexposed, na.rm = TRUE),
+    sd_richness_overexposed = sd(richness_highly_overexposed, na.rm = TRUE),
+    mean_richness_conflict = mean(richness_high_conflict, na.rm = TRUE),
+    sd_richness_conflict = sd(richness_high_conflict, na.rm = TRUE),
+    n_cells = n(),
+    .groups = "drop"
+  )
+
+# --- 3. Join stats back to simplified ecoregion polygons ---
+meow_ecos_simple <- meow_ecos %>%
+  dplyr::select(ECOREGION, geometry)
+
+meow_ecos_stats <- meow_ecos_simple %>%
+  left_join(ecoregion_stats, by = "ECOREGION")
+
+cat("Ecoregions with data:", sum(!is.na(meow_ecos_stats$mean_FEI)), "\n")
+
+# Get world map
+land <- ne_countries(scale = "medium", returnclass = "sf")
+
+# --- Clip MEOW ecoregions to remove high seas ---
+cat("Clipping ecoregions to continental waters...\n")
+
+sf_use_s2(FALSE)
+
+# Fix geometries with buffer(0) trick
+meow_ecos_fixed <- meow_ecos %>%
+  st_make_valid() %>%
+  st_buffer(0)
+
+High_seas_proj <- st_transform(High_seas, st_crs(meow_ecos_fixed))
+High_seas_fixed <- High_seas_proj %>%
+  st_make_valid() %>%
+  st_buffer(0)
+
+High_seas_union <- st_union(High_seas_fixed)
+
+# Remove high seas from ecoregion polygons
+meow_ecos_clipped <- st_difference(meow_ecos_fixed, High_seas_union)
+
+sf_use_s2(TRUE)
+
+cat("Clipped ecoregions created.\n")
+
+# --- Join stats to clipped ecoregions ---
+meow_ecos_clipped_simple <- meow_ecos_clipped %>%
+  dplyr::select(ECOREGION, geometry)
+
+meow_ecos_stats <- meow_ecos_clipped_simple %>%
+  left_join(ecoregion_stats, by = "ECOREGION")
+#======================
+# 4. ECOREGION CHOROPLETH MAPS
+#======================
+
+cat("Creating ecoregion maps...\n")
+
+# Map theme
+eco_map_theme <- theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "horizontal",
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_text(size = 11, face = "bold", hjust = 0)
+  )
+
+# Map A: Mean FEI by ecoregion
+map_eco_fei <- ggplot() +
+  geom_sf(data = meow_ecos_stats, aes(fill = mean_FEI), color = NA) +
+  geom_sf(data = land, fill = "darkgrey", color = "darkgrey", size = 0.1) +
+  scale_fill_viridis_c(
+    option = "inferno",
+    name = "Mean FEI",
+    na.value = "grey90",
+    guide = guide_colorbar(barwidth = 15, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(A) Mean FEI by ecoregion", x = NULL, y = NULL) +
+  eco_map_theme
+
+# Map B: Mean SFEI by ecoregion
+map_eco_sfei <- ggplot() +
+  geom_sf(data = meow_ecos_stats, aes(fill = mean_SFEI), color = NA) +
+  geom_sf(data = land, fill = "darkgrey", color = "darkgrey", size = 0.1) +
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Mean SFEI",
+    na.value = "grey90",
+    guide = guide_colorbar(barwidth = 15, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(B) Mean SFEI by ecoregion", x = NULL, y = NULL) +
+  eco_map_theme
+
+# Map C: Mean richness of highly overexposed species
+map_eco_overexposed <- ggplot() +
+  geom_sf(data = meow_ecos_stats, aes(fill = mean_richness_overexposed), color = NA) +
+  geom_sf(data = land, fill = "darkgrey", color = "darkgrey", size = 0.1) +
+  scale_fill_viridis_c(
+    option = "rocket",
+    direction = -1,
+    name = "Mean richness",
+    na.value = "grey90",
+    guide = guide_colorbar(barwidth = 15, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(C) Mean richness of highly overexposed species by ecoregion", x = NULL, y = NULL) +
+  eco_map_theme
+
+# Map D: Mean richness of high-conflict species
+map_eco_conflict <- ggplot() +
+  geom_sf(data = meow_ecos_stats, aes(fill = mean_richness_conflict), color = NA) +
+  geom_sf(data = land, fill = "darkgrey", color = "darkgrey", size = 0.1) +
+  scale_fill_gradientn(
+    colors = c("#FEE5D9", "#FCAE91", "#FB6A4A", "#DE2D26", "#A50F15"),
+    name = "Mean richness",
+    na.value = "grey90",
+    guide = guide_colorbar(barwidth = 15, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(D) Mean richness of high-conflict species by ecoregion", x = NULL, y = NULL) +
+  eco_map_theme
+
+# Combine maps
+combined_eco_maps <- (map_eco_fei | map_eco_sfei) / 
+                     (map_eco_overexposed | map_eco_conflict)
+
+print(combined_eco_maps)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_FEI_SFEI_ecoregion_maps.png"),
+  combined_eco_maps,
+  width = 14, height = 10, dpi = 300, bg = "white"
+)
+#======================
+# 5. TOP 20 ECOREGION BARPLOTS
+#======================
+
+cat("Creating top 20 ecoregion barplots...\n")
+
+# Top 20 by Mean FEI
+top20_fei <- ecoregion_stats %>%
+  arrange(desc(mean_FEI)) %>%
+  head(20)
+
+bar_top_fei <- ggplot(top20_fei, aes(x = reorder(ECOREGION, mean_FEI), y = mean_FEI)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "(A) Top 20 ecoregions by mean FEI", x = NULL, y = "Mean FEI") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Top 20 by Mean SFEI
+top20_sfei <- ecoregion_stats %>%
+  arrange(desc(mean_SFEI)) %>%
+  head(20)
+
+bar_top_sfei <- ggplot(top20_sfei, aes(x = reorder(ECOREGION, mean_SFEI), y = mean_SFEI)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "(B) Top 20 ecoregions by mean SFEI", x = NULL, y = "Mean SFEI") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Top 20 by richness of highly overexposed species
+top20_overexposed <- ecoregion_stats %>%
+  arrange(desc(mean_richness_overexposed)) %>%
+  head(20)
+
+bar_top_overexposed <- ggplot(top20_overexposed, 
+                               aes(x = reorder(ECOREGION, mean_richness_overexposed), 
+                                   y = mean_richness_overexposed)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "(C) Top 20 ecoregions by highly overexposed species richness", 
+       x = NULL, y = "Mean richness") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Top 20 by richness of high-conflict species
+top20_conflict <- ecoregion_stats %>%
+  arrange(desc(mean_richness_conflict)) %>%
+  head(20)
+
+bar_top_conflict <- ggplot(top20_conflict, 
+                            aes(x = reorder(ECOREGION, mean_richness_conflict), 
+                                y = mean_richness_conflict)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "(D) Top 20 ecoregions by high-conflict species richness", 
+       x = NULL, y = "Mean richness") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Combine top 20 barplots
+combined_top20 <- (bar_top_fei | bar_top_sfei) / 
+                  (bar_top_overexposed | bar_top_conflict)
+
+print(combined_top20)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_top20_ecoregions_FEI_SFEI.png"),
+  combined_top20,
+  width = 16, height = 12, dpi = 300, bg = "white"
+)
+
+#======================
+# 6. BOTTOM 20 ECOREGION BARPLOTS
+#======================
+
+cat("Creating bottom 20 ecoregion barplots...\n")
+
+# Bottom 20 by Mean FEI
+bottom20_fei <- ecoregion_stats %>%
+  arrange(mean_FEI) %>%
+  head(20)
+
+bar_bottom_fei <- ggplot(bottom20_fei, aes(x = reorder(ECOREGION, mean_FEI), y = mean_FEI)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "(A) Bottom 20 ecoregions by mean FEI", x = NULL, y = "Mean FEI") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Bottom 20 by Mean SFEI
+bottom20_sfei <- ecoregion_stats %>%
+  arrange(mean_SFEI) %>%
+  head(20)
+
+bar_bottom_sfei <- ggplot(bottom20_sfei, aes(x = reorder(ECOREGION, mean_SFEI), y = mean_SFEI)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "(B) Bottom 20 ecoregions by mean SFEI", x = NULL, y = "Mean SFEI") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Bottom 20 by richness of highly overexposed species
+bottom20_overexposed <- ecoregion_stats %>%
+  arrange(mean_richness_overexposed) %>%
+  head(20)
+
+bar_bottom_overexposed <- ggplot(bottom20_overexposed, 
+                                  aes(x = reorder(ECOREGION, mean_richness_overexposed), 
+                                      y = mean_richness_overexposed)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "(C) Bottom 20 ecoregions by highly overexposed species richness", 
+       x = NULL, y = "Mean richness") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Bottom 20 by richness of high-conflict species
+bottom20_conflict <- ecoregion_stats %>%
+  arrange(mean_richness_conflict) %>%
+  head(20)
+
+bar_bottom_conflict <- ggplot(bottom20_conflict, 
+                               aes(x = reorder(ECOREGION, mean_richness_conflict), 
+                                   y = mean_richness_conflict)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "(D) Bottom 20 ecoregions by high-conflict species richness", 
+       x = NULL, y = "Mean richness") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Combine bottom 20 barplots
+combined_bottom20 <- (bar_bottom_fei | bar_bottom_sfei) / 
+                     (bar_bottom_overexposed | bar_bottom_conflict)
+
+print(combined_bottom20)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_bottom20_ecoregions_FEI_SFEI.png"),
+  combined_bottom20,
+  width = 16, height = 12, dpi = 300, bg = "white"
+)
+
+#======================
+# 7. SAVE ECOREGION STATISTICS
+#======================
+
+cat("\n=== TOP 10 ECOREGIONS BY METRIC ===\n")
+
+cat("\nTop 10 by Mean FEI:\n")
+print(head(ecoregion_stats %>% arrange(desc(mean_FEI)) %>% 
+             select(ECOREGION, REALM, mean_FEI, sd_FEI), 10))
+
+cat("\nTop 10 by Mean SFEI:\n")
+print(head(ecoregion_stats %>% arrange(desc(mean_SFEI)) %>% 
+             select(ECOREGION, REALM, mean_SFEI, sd_SFEI), 10))
+
+cat("\nTop 10 by Highly Overexposed Richness:\n")
+print(head(ecoregion_stats %>% arrange(desc(mean_richness_overexposed)) %>% 
+             select(ECOREGION, REALM, mean_richness_overexposed), 10))
+
+cat("\nTop 10 by High-Conflict Richness:\n")
+print(head(ecoregion_stats %>% arrange(desc(mean_richness_conflict)) %>% 
+             select(ECOREGION, REALM, mean_richness_conflict), 10))
+
+# Save statistics
+write_csv(ecoregion_stats, here::here("R", "Outputs", "Ecoregion_FEI_SFEI_stats.csv"))
+
+cat("\nEcoregion statistics saved.\n")
 ```
 
 
