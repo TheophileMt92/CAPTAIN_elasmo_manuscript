@@ -3689,11 +3689,11 @@ panel_fei <- ggplot(fei_iucn_data,
 
 # --- Panel B: SFEI by IUCN ---
 panel_sfei <- ggplot(fei_iucn_data,
-                      aes(x = factor(IUCN_status, levels = iucn_order),
+                      aes(x = factor(IUCN, levels = iucn_order),
                           y = SFEI)) +
   geom_hline(yintercept = 1.96, linetype = "dashed", color = "red", linewidth = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.3) +
-  geom_jitter(aes(color = IUCN_status),
+  geom_jitter(aes(color = IUCN),
               width = 0.15,
               size = 1.5,
               alpha = 0.6) +
@@ -3780,3 +3780,334 @@ write_csv(summary_table, here::here("R", "Outputs", "FEI_SFEI_by_IUCN_summary.cs
 cat("\nAnalysis complete.\n")
 
 ```
+
+## Trait sensibility 
+
+```{r}
+# =============================================================================
+# Calcul de l'indice de Sensibilité (S) et Vulnérabilité (V) à la pêche
+# =============================================================================
+
+library(tidyverse)
+library(readxl)
+library(here)
+
+# -----------------------------------------------------------------------------
+# 1. Charger les données
+# -----------------------------------------------------------------------------
+
+# Traits
+traits <- read_excel(here("R", "Data", "Trait_data_final.xlsx"))
+
+# -----------------------------------------------------------------------------
+# 2. Calculer les terciles de max.length
+# -----------------------------------------------------------------------------
+# Convertir en numérique (les "NA" texte deviennent NA)
+traits <- traits %>%
+  mutate(max.length = as.numeric(max.length))
+
+# Vérifier
+summary(traits$max.length)
+
+# Maintenant calculer les terciles
+length_terciles <- quantile(traits$max.length, probs = c(1/3, 2/3), na.rm = TRUE)
+length_terciles
+length_terciles <- quantile(traits$max.length, probs = c(1/3, 2/3), na.rm = TRUE)
+cat("Terciles de max.length:\n")
+cat("  T1 (33%):", length_terciles[1], "cm\n")
+cat("  T2 (67%):", length_terciles[2], "cm\n")
+
+# -----------------------------------------------------------------------------
+# 3. Calculer l'indice de Sensibilité (S)
+# -----------------------------------------------------------------------------
+
+traits_sensitivity <- traits %>%
+  mutate(
+    # Score max.length (terciles)
+    score_length = case_when(
+      max.length <= length_terciles[1] ~ 0,
+      max.length <= length_terciles[2] ~ 1,
+      max.length > length_terciles[2] ~ 2,
+      TRUE ~ NA_real_
+    ),
+    
+    # Score reproduction
+    score_repro = case_when(
+      reproduction == "oviparous" ~ 0,
+      reproduction == "ovoviviparous" ~ 1,
+      reproduction == "viviparous" ~ 2,
+      TRUE ~ NA_real_
+    ),
+    
+    # Score deepwater
+    score_deep = case_when(
+      deepwater == "no" ~ 0,
+      deepwater == "yes" ~ 2,
+      TRUE ~ NA_real_
+    ),
+    
+    # Score habitat
+    score_habitat = case_when(
+      habitat == "shelf" ~ 2,
+      habitat %in% c("shelf/slope", "slope", "all") ~ 1,
+      habitat %in% c("slope/offshore", "offshore") ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    # Score vertical
+    score_vertical = case_when(
+      vertical == "benthic" ~ 0,
+      vertical == "benthopelagic" ~ 1,
+      vertical == "pelagic" ~ 2,
+      TRUE ~ NA_real_
+    ),
+    
+    # Sensibilité totale (normalisée 0-1)
+    S = (score_length + score_repro + score_deep + score_habitat + score_vertical) / 10
+  )
+
+# -----------------------------------------------------------------------------
+# 4. Résumé de la sensibilité
+# -----------------------------------------------------------------------------
+
+cat("\n=== Résumé de l'indice de Sensibilité (S) ===\n")
+print(summary(traits_sensitivity$S))
+
+cat("\nNombre d'espèces avec S calculé:", sum(!is.na(traits_sensitivity$S)), "\n")
+cat("Nombre d'espèces avec NA:", sum(is.na(traits_sensitivity$S)), "\n")
+
+# Distribution des scores individuels
+cat("\n=== Distribution des scores par trait ===\n")
+traits_sensitivity %>%
+  summarise(
+    across(starts_with("score_"), 
+           list(mean = ~mean(., na.rm = TRUE), 
+                na = ~sum(is.na(.))),
+           .names = "{.col}_{.fn}")
+  ) %>%
+  pivot_longer(everything()) %>%
+  print(n = 20)
+
+# -----------------------------------------------------------------------------
+# 5. Fusionner avec FEI/SFEI et calculer la Vulnérabilité (V)
+# -----------------------------------------------------------------------------
+
+# Normaliser FEI entre 0 et 1 pour le calcul de P (exposition)
+# Recalculer species_vulnerability avec le filtre de coverage
+species_vulnerability <- traits_sensitivity %>%
+  dplyr::select(Species, Family, Order, Superorder, 
+                max.length, reproduction, deepwater, habitat, vertical,
+                score_length, score_repro, score_deep, score_habitat, score_vertical, S) %>%
+  left_join(
+    SFEI_results %>% 
+      filter(Fishing_Data_Coverage > 0.5) %>%  # Appliquer le même filtre que dans le manuscrit
+      dplyr::select(Species, FEI_observed, SFEI, p_value, IUCN, FUSE, EDGE2),
+    by = "Species"
+  ) %>%
+  filter(!is.na(FEI_observed) & !is.na(S)) %>%
+  mutate(
+    P = (FEI_observed - min(FEI_observed, na.rm = TRUE)) / 
+        (max(FEI_observed, na.rm = TRUE) - min(FEI_observed, na.rm = TRUE)),
+    V = S * P
+  )
+
+nrow(species_vulnerability)
+# -----------------------------------------------------------------------------
+# 6. Résumé
+# -----------------------------------------------------------------------------
+
+cat("=== Résumé de la Sensibilité (S) ===\n")
+print(summary(species_vulnerability$S))
+
+cat("\n=== Résumé de l'Exposition (P) ===\n")
+print(summary(species_vulnerability$P))
+
+cat("\n=== Résumé de la Vulnérabilité (V) ===\n")
+print(summary(species_vulnerability$V))
+
+cat("\nNombre d'espèces avec V calculé:", nrow(species_vulnerability), "\n")
+
+# -----------------------------------------------------------------------------
+# 7. Top 20 espèces les plus vulnérables
+# -----------------------------------------------------------------------------
+
+top20_vulnerable <- species_vulnerability %>%
+  arrange(desc(V)) %>%
+  dplyr::select(Species, IUCN, S, P, V, FEI_observed, SFEI) %>%
+  head(20)
+
+cat("\n=== Top 20 espèces les plus vulnérables à la pêche ===\n")
+print(top20_vulnerable, n = 20)
+
+# -----------------------------------------------------------------------------
+# 7. Visualisation: S vs P (comme Fig. 2b,c dans Albouy et al.)
+# -----------------------------------------------------------------------------
+
+p_vulnerability <- ggplot(species_vulnerability, aes(x = S, y = P)) +
+  geom_jitter(aes(color = factor(IUCN), size = V), alpha = 0.6, width = 0.015, height = 0) +
+  scale_color_manual(
+    values = c("1" = "#4DAF4A", "2" = "#377EB8", "3" = "#FFFF33", 
+               "4" = "#FF7F00", "5" = "#E41A1C"),
+    labels = c("LC", "NT", "VU", "EN", "CR"),
+    name = "IUCN Status"
+  ) +
+  scale_size_continuous(range = c(1, 8), name = "Vulnerability (V)") +
+  labs(
+    x = "Intrinsic Sensitivity to Fishing (S)",
+    y = "Fishing Exposure (P, normalized FEI)",
+    title = "Vulnerability of elasmobranchs to fishing pressure"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+
+print(p_vulnerability)
+
+ggsave(here("R", "Outputs", "Fig_vulnerability_S_vs_P.png"), 
+       p_vulnerability, width = 10, height = 8, dpi = 300)
+
+# -----------------------------------------------------------------------------
+# 8. Sauvegarder les résultats
+# -----------------------------------------------------------------------------
+
+saveRDS(species_vulnerability, here("R", "Outputs", "species_vulnerability.rds"))
+write_csv(species_vulnerability, here("R", "Outputs", "species_vulnerability.csv"))
+
+cat("\nFichiers sauvegardés dans R/Outputs/\n")
+
+# =============================================================================
+# Cartographie de la vulnérabilité (V) à la pêche
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Transformer species_presence_list en data.frame long
+# -----------------------------------------------------------------------------
+
+species_cell_long <- bind_rows(
+  lapply(names(species_presence_list), function(sp) {
+    data.frame(
+      Species = sp,
+      PUID = species_presence_list[[sp]]
+    )
+  })
+)
+
+cat("Dimensions species_cell_long:", nrow(species_cell_long), "lignes\n")
+
+# -----------------------------------------------------------------------------
+# 2. Joindre avec la vulnérabilité et les coordonnées
+# -----------------------------------------------------------------------------
+
+cell_vulnerability <- species_cell_long %>%
+  # Joindre V par espèce
+  left_join(
+    species_vulnerability %>% dplyr::select(Species, S, P, V, IUCN),
+    by = "Species"
+  ) %>%
+  filter(!is.na(V)) %>%
+  # Joindre coordonnées par cellule
+  left_join(
+    cell_metrics %>% dplyr::select(PUID, Longitude, Latitude),
+    by = "PUID"
+  ) %>%
+  filter(!is.na(Longitude)) %>%
+  # Agréger par cellule
+  group_by(PUID, Longitude, Latitude) %>%
+  summarise(
+    mean_V = mean(V, na.rm = TRUE),
+    mean_S = mean(S, na.rm = TRUE),
+    mean_P = mean(P, na.rm = TRUE),
+    n_species = n(),
+    # Richesse d'espèces très vulnérables (V > 0.4)
+    richness_high_V = sum(V > 0.4, na.rm = TRUE),
+    # Richesse d'espèces vulnérables ET menacées (V > 0.3 & IUCN >= VU)
+    richness_vulnerable_threatened = sum(V > 0.3 & IUCN >= 3, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cat("\n=== Résumé de la vulnérabilité par cellule ===\n")
+print(summary(cell_vulnerability$mean_V))
+cat("Nombre de cellules:", nrow(cell_vulnerability), "\n")
+
+# -----------------------------------------------------------------------------
+# 3. Cartographie
+# -----------------------------------------------------------------------------
+
+library(patchwork)
+
+# Carte V moyenne
+p_map_V <- ggplot() +
+  geom_tile(data = cell_vulnerability, 
+            aes(x = Longitude, y = Latitude, fill = mean_V)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "inferno", name = "Mean V") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(A) Mean Vulnerability to Fishing (V)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Carte S moyenne
+p_map_S <- ggplot() +
+  geom_tile(data = cell_vulnerability, 
+            aes(x = Longitude, y = Latitude, fill = mean_S)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "mako", name = "Mean S") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(B) Mean Intrinsic Sensitivity (S)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Carte richesse espèces très vulnérables
+p_map_high_V <- ggplot() +
+  geom_tile(data = cell_vulnerability, 
+            aes(x = Longitude, y = Latitude, fill = richness_high_V)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "rocket", name = "Species\nrichness") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(C) Richness of highly vulnerable species (V > 0.4)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Carte richesse espèces vulnérables ET menacées
+p_map_vuln_threatened <- ggplot() +
+  geom_tile(data = cell_vulnerability, 
+            aes(x = Longitude, y = Latitude, fill = richness_vulnerable_threatened)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_gradient(low = "white", high = "darkred", name = "Species\nrichness") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(D) Richness of vulnerable AND threatened species (V > 0.3 & IUCN ≥ VU)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Combiner
+p_combined <- (p_map_V | p_map_S) / (p_map_high_V | p_map_vuln_threatened)
+
+print(p_combined)
+
+ggsave(here("R", "Outputs", "Fig_vulnerability_maps.png"), 
+       p_combined, width = 14, height = 10, dpi = 300)
+
+```
+
