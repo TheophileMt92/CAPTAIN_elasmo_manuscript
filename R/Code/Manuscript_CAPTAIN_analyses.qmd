@@ -1302,6 +1302,251 @@ kable(comprehensive_diagnostics,
 cat("\n")
 
 ```
+## Species accumulation curve
+```{r}
+#======================
+# FIG 2D: ENHANCED PROTECTION CURVES WITH ANNOTATIONS AND INSET
+#======================
+
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+
+# --- 1. Prepare data ---
+accum_data <- protected_fractions %>%
+  mutate(
+    IUCN = IUCN * 100,
+    FUSE = FUSE * 100,
+    EDGE2 = EDGE2 * 100
+  )
+
+# --- 2. Create sorted curves ---
+curve_iucn <- tibble(
+  rank = 1:sum(!is.na(accum_data$IUCN)),
+  protection = sort(accum_data$IUCN[!is.na(accum_data$IUCN)]),
+  index = "IUCN"
+)
+
+curve_fuse <- tibble(
+  rank = 1:sum(!is.na(accum_data$FUSE)),
+  protection = sort(accum_data$FUSE[!is.na(accum_data$FUSE)]),
+  index = "FUSE"
+)
+
+curve_edge2 <- tibble(
+  rank = 1:sum(!is.na(accum_data$EDGE2)),
+  protection = sort(accum_data$EDGE2[!is.na(accum_data$EDGE2)]),
+  index = "EDGE2"
+)
+
+curve_data <- bind_rows(curve_iucn, curve_fuse, curve_edge2)
+
+# --- 3. Calculate statistics ---
+n_species <- nrow(accum_data)
+
+# Species reaching each threshold (for annotations)
+thresholds <- c(1, 10, 30, 50)
+
+stats_list <- lapply(thresholds, function(t) {
+  data.frame(
+    threshold = t,
+    IUCN_n = sum(accum_data$IUCN >= t, na.rm = TRUE),
+    FUSE_n = sum(accum_data$FUSE >= t, na.rm = TRUE),
+    EDGE2_n = sum(accum_data$EDGE2 >= t, na.rm = TRUE)
+  ) %>%
+    mutate(
+      IUCN_pct = round(IUCN_n / n_species * 100, 1),
+      FUSE_pct = round(FUSE_n / n_species * 100, 1),
+      EDGE2_pct = round(EDGE2_n / n_species * 100, 1)
+    )
+})
+threshold_stats <- bind_rows(stats_list)
+
+print(threshold_stats)
+
+# --- 4. Create CUMULATIVE protection bins for inset ---
+# Species reaching AT LEAST each threshold (cumulative, increasing order)
+cumulative_bins <- data.frame(
+  threshold = c("≥50%", "≥30%", "≥10%", "≥1%"),
+  IUCN = c(
+    sum(accum_data$IUCN >= 50, na.rm = TRUE),
+    sum(accum_data$IUCN >= 30, na.rm = TRUE),
+    sum(accum_data$IUCN >= 10, na.rm = TRUE),
+    sum(accum_data$IUCN >= 1, na.rm = TRUE)
+  ),
+  FUSE = c(
+    sum(accum_data$FUSE >= 50, na.rm = TRUE),
+    sum(accum_data$FUSE >= 30, na.rm = TRUE),
+    sum(accum_data$FUSE >= 10, na.rm = TRUE),
+    sum(accum_data$FUSE >= 1, na.rm = TRUE)
+  ),
+  EDGE2 = c(
+    sum(accum_data$EDGE2 >= 50, na.rm = TRUE),
+    sum(accum_data$EDGE2 >= 30, na.rm = TRUE),
+    sum(accum_data$EDGE2 >= 10, na.rm = TRUE),
+    sum(accum_data$EDGE2 >= 1, na.rm = TRUE)
+  )
+) %>%
+  pivot_longer(cols = c(IUCN, FUSE, EDGE2), names_to = "index", values_to = "n") %>%
+  mutate(pct = n / n_species * 100)
+
+# Order so bars increase left to right
+cumulative_bins$threshold <- factor(cumulative_bins$threshold, 
+                                     levels = c("≥50%", "≥30%", "≥10%", "≥1%"))
+
+# --- 5. Create CUMULATIVE inset barplot ---
+inset_plot <- ggplot(cumulative_bins, aes(x = threshold, y = pct, fill = index)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("IUCN" = "#E41A1C", "FUSE" = "#377EB8", "EDGE2" = "#984EA3")) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 25)) +
+  labs(
+    x = "Protection threshold",
+    y = "% of species"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 8),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    plot.background = element_rect(fill = alpha("grey80", 0.3), color = NA),
+    panel.background = element_rect(fill = alpha("grey80", 0.3), color = NA),
+    plot.margin = margin(5, 5, 5, 5)
+  )
+
+# --- Find x positions where IUCN curve crosses each threshold ---
+x_at_1 <- which(curve_iucn$protection >= 1)[1]
+x_at_10 <- which(curve_iucn$protection >= 10)[1]
+x_at_30 <- which(curve_iucn$protection >= 30)[1]
+x_at_50 <- which(curve_iucn$protection >= 50)[1]
+
+# Add x offset to move 10%, 30%, 50% annotations closer to red line
+x_offset <- 50
+
+# Get y values of IUCN curve at those positions (plus offset for label above)
+y_offset <- 25
+
+y_at_1 <- curve_iucn$protection[x_at_1] + 15
+y_at_10 <- curve_iucn$protection[x_at_10 + x_offset] + y_offset
+y_at_30 <- curve_iucn$protection[x_at_30 + x_offset] + y_offset
+y_at_50 <- curve_iucn$protection[x_at_50 + x_offset] + y_offset
+
+# Calculate percentages for <1%
+pct_below1_iucn <- round((n_species - threshold_stats$IUCN_n[1]) / n_species * 100, 1)
+pct_below1_fuse <- round((n_species - threshold_stats$FUSE_n[1]) / n_species * 100, 1)
+pct_below1_edge2 <- round((n_species - threshold_stats$EDGE2_n[1]) / n_species * 100, 1)
+
+# --- 6. Create main plot ---
+main_plot <- ggplot(curve_data, aes(x = rank, y = protection, color = index)) +
+  # L-shape <1% (red) - outermost
+  annotate("rect", xmin = 0, xmax = x_at_1, ymin = 0, ymax = 100, 
+           fill = "#d73027", alpha = 0.3) +
+  annotate("rect", xmin = x_at_1, xmax = n_species, ymin = 0, ymax = 1, 
+           fill = "#d73027", alpha = 0.3) +
+  # L-shape 1-10% (orange)
+  annotate("rect", xmin = x_at_1, xmax = x_at_10, ymin = 1, ymax = 100, 
+           fill = "#fc8d59", alpha = 0.3) +
+  annotate("rect", xmin = x_at_10, xmax = n_species, ymin = 1, ymax = 10, 
+           fill = "#fc8d59", alpha = 0.3) +
+  # L-shape 10-30% (yellow)
+  annotate("rect", xmin = x_at_10, xmax = x_at_30, ymin = 10, ymax = 100, 
+           fill = "#fee090", alpha = 0.3) +
+  annotate("rect", xmin = x_at_30, xmax = n_species, ymin = 10, ymax = 30, 
+           fill = "#fee090", alpha = 0.3) +
+  # L-shape 30-50% (light blue)
+  annotate("rect", xmin = x_at_30, xmax = x_at_50, ymin = 30, ymax = 100, 
+           fill = "#e0f3f8", alpha = 0.3) +
+  annotate("rect", xmin = x_at_50, xmax = n_species, ymin = 30, ymax = 50, 
+           fill = "#e0f3f8", alpha = 0.3) +
+  # Rectangle >50% (blue) - innermost
+  annotate("rect", xmin = x_at_50, xmax = n_species, ymin = 50, ymax = 100, 
+           fill = "#91bfdb", alpha = 0.3) +
+  # Reference lines at key thresholds
+  geom_hline(yintercept = 10, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+  geom_hline(yintercept = 30, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+  # Curves
+  geom_line(linewidth = 0.9) +
+  scale_color_manual(
+    values = c("IUCN" = "#E41A1C", "FUSE" = "#377EB8", "EDGE2" = "#984EA3"),
+    breaks = c("IUCN", "FUSE", "EDGE2"),
+    name = "Prioritisation"
+  ) +
+  scale_x_continuous(expand = c(0.01, 0)) +
+  scale_y_continuous(expand = c(0.02, 0), breaks = seq(0, 100, 10), limits = c(0, 130)) +
+  labs(
+    x = "Species rank (ordered by % range protected)",
+    y = "% range protected"
+  ) +
+  # --- Annotation <1% threshold ---
+annotate("label", x = x_at_1, y = y_at_1, 
+         label = paste0("<1%\nIUCN: ", pct_below1_iucn, "%\nFUSE: ", pct_below1_fuse, "%\nEDGE2: ", pct_below1_edge2, "%"),
+         size = 3, hjust = 0.5, color = "grey20", lineheight = 0.9,
+         fill = "#d73027", alpha = 0.3, label.size = 0) +
+
+# --- Annotation ≥10% threshold ---
+annotate("label", x = x_at_10 + x_offset, y = y_at_10, 
+         label = paste0("≥10%\nIUCN: ", threshold_stats$IUCN_pct[2], "%\nFUSE: ", threshold_stats$FUSE_pct[2], "%\nEDGE2: ", threshold_stats$EDGE2_pct[2], "%"),
+         size = 3, hjust = 0.5, color = "grey20", lineheight = 0.9,
+         fill = "#fc8d59", alpha = 0.3, label.size = 0) +
+
+# --- Annotation ≥30% threshold ---
+annotate("label", x = x_at_30 + x_offset, y = y_at_30, 
+         label = paste0("≥30%\nIUCN: ", threshold_stats$IUCN_pct[3], "%\nFUSE: ", threshold_stats$FUSE_pct[3], "%\nEDGE2: ", threshold_stats$EDGE2_pct[3], "%"),
+         size = 3, hjust = 0.5, color = "grey20", lineheight = 0.9,
+         fill = "#fee090", alpha = 0.3, label.size = 0) +
+
+# --- Annotation ≥50% threshold ---
+annotate("label", x = x_at_50 + x_offset, y = y_at_50, 
+         label = paste0("≥50%\nIUCN: ", threshold_stats$IUCN_pct[4], "%\nFUSE: ", threshold_stats$FUSE_pct[4], "%\nEDGE2: ", threshold_stats$EDGE2_pct[4], "%"),
+         size = 3, hjust = 0.5, color = "grey20", lineheight = 0.9,
+         fill = "#91bfdb", alpha = 0.3, label.size = 0) +
+  
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 11, hjust = 0.5),
+    legend.title.position = "top",
+    legend.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.margin = margin(5, 30, 5, 5)
+  ) +
+  coord_cartesian(clip = "off")
+
+# --- 7. Add inset to main plot ---
+fig2d <- main_plot +
+  inset_element(
+    inset_plot,
+    left = 0.58, right = 0.98,
+    bottom = 0.02, top = 0.38
+  )
+
+print(fig2d)
+
+ggsave(
+  here::here("R", "Outputs", "Fig2D_protection_curves_annotated.png"),
+  fig2d,
+  width = 10, height = 6, dpi = 300, bg = "white"
+)
+```
+
+Now each annotation is:
+```
+<1%
+IUCN: X%
+FUSE: Y%
+EDGE2: Z%
+# --- 8. Print summary stats ---
+cat("\n=== CUMULATIVE PROTECTION SUMMARY ===\n\n")
+cat("% of species reaching each protection threshold:\n\n")
+print(threshold_stats)
+```
 
 # Manuscript maps
 
@@ -2148,7 +2393,7 @@ ggsave(here::here("R","Outputs", "Fig.4_All_indices_fishing_bivariate_maps_verti
 knitr::include_graphics(here::here("R","Outputs", "Fig.4_All_indices_fishing_bivariate_maps_vertical.png"))
 ```
 
-## Fishing Exposure Index
+## Fishing Exposure Index : original approach 
 
 ```{r}
 #| label: fishing-exposure-index
@@ -2837,8 +3082,281 @@ cat("\nCell-level metrics saved.\n")
 
 ```
 
+## Comparison FEI: Mean vs Tercile Approach 
+
+```{r}
+# =============================================================================
+# Comparison FEI: Mean vs Tercile Approach (Albouy et al. 2020)
+# =============================================================================
+
+library(tidyverse)
+library(here)
+
+# -----------------------------------------------------------------------------
+# 1. Calculate global terciles of log(fishing hours)
+# -----------------------------------------------------------------------------
+
+# Extract all fishing values per cell (log-transformed)
+all_fishing_values <- aggregated_data %>%
+  filter(predicted_fishing_hours > 0) %>%
+  mutate(log_fishing = log(predicted_fishing_hours + 1))
+
+# Global terciles
+terciles <- quantile(all_fishing_values$log_fishing, probs = c(1/3, 2/3), na.rm = TRUE)
+cat("Global terciles of log(fishing hours):\n")
+cat("T1 (Low/Medium boundary):", terciles[1], "\n")
+cat("T2 (Medium/High boundary):", terciles[2], "\n")
+
+# Categorize each cell
+all_fishing_values <- all_fishing_values %>%
+  mutate(
+    fishing_category = case_when(
+      log_fishing <= terciles[1] ~ "Low",
+      log_fishing <= terciles[2] ~ "Medium",
+      TRUE ~ "High"
+    ),
+    fishing_score = case_when(
+      log_fishing <= terciles[1] ~ 0,
+      log_fishing <= terciles[2] ~ 1,
+      TRUE ~ 2
+    )
+  )
+
+# Check distribution
+table(all_fishing_values$fishing_category)
+
+# -----------------------------------------------------------------------------
+# 2. Calculate FEI "terciles" for each species
+# -----------------------------------------------------------------------------
+
+# Create lookup cell -> fishing category
+cell_fishing_category <- cell_metrics %>%
+  dplyr::select(PUID, Longitude, Latitude) %>%
+  left_join(
+    all_fishing_values %>% 
+      dplyr::select(lon_05deg, lat_05deg, log_fishing, fishing_score),
+    by = c("Longitude" = "lon_05deg", "Latitude" = "lat_05deg")
+  )
+
+# Calculate FEI_terciles for each species
+FEI_terciles <- bind_rows(
+  lapply(names(species_presence_list), function(sp) {
+    cells <- species_presence_list[[sp]]
+    
+    # Get fishing scores for these cells
+    sp_fishing <- cell_fishing_category %>%
+      filter(PUID %in% cells) %>%
+      filter(!is.na(fishing_score))
+    
+    if(nrow(sp_fishing) == 0) return(NULL)
+    
+    # Calculate proportions in each category
+    n_total <- nrow(sp_fishing)
+    a <- sum(sp_fishing$fishing_score == 0) / n_total  # proportion Low
+    b <- sum(sp_fishing$fishing_score == 1) / n_total  # proportion Medium
+    c <- sum(sp_fishing$fishing_score == 2) / n_total  # proportion High
+    
+    # FEI following Albouy et al.
+    FEI_terc <- a * 0 + b * 1 + c * 2
+    
+    data.frame(
+      Species = sp,
+      prop_Low = a,
+      prop_Medium = b,
+      prop_High = c,
+      FEI_terciles = FEI_terc,
+      n_cells = n_total
+    )
+  })
+)
+
+# -----------------------------------------------------------------------------
+# 3. Compare with original FEI (mean)
+# -----------------------------------------------------------------------------
+
+comparison <- FEI_terciles %>%
+  left_join(
+    FEI_results %>% dplyr::select(Species, FEI_log, Range_Size),
+    by = "Species"
+  ) %>%
+  rename(FEI_mean = FEI_log)
+
+# Correlation
+cor_test <- cor.test(comparison$FEI_mean, comparison$FEI_terciles, method = "spearman")
+cat("\n=== Correlation between both approaches ===\n")
+cat("Spearman rho:", cor_test$estimate, "\n")
+cat("p-value:", cor_test$p.value, "\n")
+
+# Summaries
+cat("\n=== Summary FEI mean (original approach) ===\n")
+print(summary(comparison$FEI_mean))
+
+cat("\n=== Summary FEI terciles (Albouy approach) ===\n")
+print(summary(comparison$FEI_terciles))
+
+# -----------------------------------------------------------------------------
+# 4. Visualization
+# -----------------------------------------------------------------------------
+
+# Scatter plot comparison
+p_comparison <- ggplot(comparison, aes(x = FEI_mean, y = FEI_terciles)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(
+    x = "FEI (mean log fishing hours)",
+    y = "FEI (tercile proportions, Albouy et al.)",
+    title = "Comparison of FEI calculation approaches",
+    subtitle = paste0("Spearman ρ = ", round(cor_test$estimate, 3))
+  ) +
+  theme_minimal()
+
+print(p_comparison)
+
+# Does ranking change?
+comparison <- comparison %>%
+  mutate(
+    rank_mean = rank(-FEI_mean),
+    rank_terciles = rank(-FEI_terciles),
+    rank_diff = abs(rank_mean - rank_terciles)
+  )
+
+cat("\n=== Ranking changes ===\n")
+cat("Rank correlation:", cor(comparison$rank_mean, comparison$rank_terciles, method = "spearman"), "\n")
+cat("Mean rank difference:", mean(comparison$rank_diff), "\n")
+cat("Max rank difference:", max(comparison$rank_diff), "\n")
+
+# Top 10 with each method
+cat("\n=== Top 10 FEI mean ===\n")
+print(comparison %>% arrange(desc(FEI_mean)) %>% dplyr::select(Species, FEI_mean, FEI_terciles) %>% head(10))
+
+cat("\n=== Top 10 FEI terciles ===\n")
+print(comparison %>% arrange(desc(FEI_terciles)) %>% dplyr::select(Species, FEI_mean, FEI_terciles) %>% head(10))
+
+# =============================================================================
+# Map Mean FEI (tercile approach) per grid cell
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Calculate mean FEI_terciles per cell
+# -----------------------------------------------------------------------------
+
+# First, join species FEI_terciles to presence data
+cell_FEI_terciles <- bind_rows(
+  lapply(names(species_presence_list), function(sp) {
+    cells <- species_presence_list[[sp]]
+    fei_terc <- FEI_terciles %>% filter(Species == sp) %>% pull(FEI_terciles)
+    
+    if(length(fei_terc) == 0 || is.na(fei_terc)) return(NULL)
+    
+    data.frame(
+      PUID = cells,
+      Species = sp,
+      FEI_terciles = fei_terc
+    )
+  })
+) %>%
+  # Join coordinates
+  left_join(
+    cell_metrics %>% dplyr::select(PUID, Longitude, Latitude),
+    by = "PUID"
+  ) %>%
+  # Calculate mean per cell
+  group_by(PUID, Longitude, Latitude) %>%
+  summarise(
+    mean_FEI_terciles = mean(FEI_terciles, na.rm = TRUE),
+    n_species = n(),
+    .groups = "drop"
+  )
+
+cat("=== Summary of mean FEI (terciles) per cell ===\n")
+print(summary(cell_FEI_terciles$mean_FEI_terciles))
+
+# -----------------------------------------------------------------------------
+# 2. Compare with mean FEI (original approach) per cell
+# -----------------------------------------------------------------------------
+
+# Join both approaches
+cell_comparison <- cell_FEI_terciles %>%
+  left_join(
+    cell_metrics %>% dplyr::select(PUID, mean_FEI),
+    by = "PUID"
+  )
+
+# Correlation at cell level
+cor_cell <- cor.test(cell_comparison$mean_FEI, cell_comparison$mean_FEI_terciles, 
+                     method = "spearman", use = "complete.obs")
+cat("\n=== Cell-level correlation between approaches ===\n")
+cat("Spearman rho:", cor_cell$estimate, "\n")
+
+# -----------------------------------------------------------------------------
+# 3. Create maps
+# -----------------------------------------------------------------------------
+
+library(patchwork)
+
+# Map FEI mean (original)
+p_map_fei_mean <- ggplot() +
+  geom_tile(data = cell_comparison, 
+            aes(x = Longitude, y = Latitude, fill = mean_FEI)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "inferno", name = "Mean FEI") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(A) Mean FEI - Original approach (mean log fishing hours)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Map FEI terciles (Albouy approach)
+p_map_fei_terciles <- ggplot() +
+  geom_tile(data = cell_comparison, 
+            aes(x = Longitude, y = Latitude, fill = mean_FEI_terciles)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "inferno", name = "Mean FEI", limits = c(0, 2)) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(B) Mean FEI - Tercile approach (Albouy et al. 2020)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Combine maps
+p_fei_comparison <- p_map_fei_mean / p_map_fei_terciles
+
+print(p_fei_comparison)
+
+ggsave(here("R", "Outputs", "Fig_FEI_comparison_mean_vs_terciles.png"), 
+       p_fei_comparison, width = 12, height = 10, dpi = 300)
+
+# -----------------------------------------------------------------------------
+# 4. Scatter plot of cell-level comparison
+# -----------------------------------------------------------------------------
+
+p_cell_scatter <- ggplot(cell_comparison, aes(x = mean_FEI, y = mean_FEI_terciles)) +
+  geom_point(alpha = 0.3, size = 0.5) +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(
+    x = "Mean FEI (original: mean log fishing hours)",
+    y = "Mean FEI (tercile approach)",
+    title = "Cell-level comparison of FEI approaches",
+    subtitle = paste0("Spearman ρ = ", round(cor_cell$estimate, 3))
+  ) +
+  theme_minimal()
+
+print(p_cell_scatter)
+
+ggsave(here("R", "Outputs", "Fig_FEI_cell_comparison_scatter.png"), 
+       p_cell_scatter, width = 8, height = 6, dpi = 300)
+```
 
 ## Ecoregion breakdown of FEI and SFEI
+
 ```{r}
 #| label: fei-sfei-ecoregion-analysis
 #| echo: true
