@@ -59,7 +59,6 @@ load(here::here("R","Data", "puvsp_marine.Rdata"))
 mpa_NT <- raster::raster(here::here("R","Data", "mpa_NT_binary.tif"))
 
 # High seas shapefile 
-# High seas shapefile 
 High_seas = st_read(here::here("R","Data", "World_High_Seas_v2_20241010", "High_Seas_v2.shp"), quiet = TRUE)
 
 # Ecoregion shapefile
