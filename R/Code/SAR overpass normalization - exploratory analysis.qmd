@@ -1,0 +1,220 @@
+---
+title: "SAR overpass normalization - exploratory analysis"
+author: "Théophile L. Mouton"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-location: right
+    self-contained: true
+    code-fold: true
+    code-tools: true
+editor: visual
+execute:
+  warning: false
+  error: false
+---
+
+## Background
+
+This document explores whether the Sentinel-1 SAR vessel detection data used in our fishing pressure analysis should be normalised by the number of satellite overpasses per grid cell. A reviewer raised this concern, noting that cells imaged more frequently by Sentinel-1 will accumulate more detections regardless of actual fishing intensity, potentially introducing spatial bias in our fishing pressure estimates.
+
+The SAR data used in this analysis are raw vessel detection records from Paolo et al. (2024, Nature), downloaded from the Global Fishing Watch data portal. Our analysis used 89 monthly CSV files covering 2017-2020, totalling 18,166,235 individual vessel detections.
+
+## Libraries
+```{r}
+library(tidyverse)
+library(here)
+library(ggplot2)
+library(maps)
+library(viridis)
+library(scales)
+library(knitr)
+library(kableExtra)
+```
+
+## Load data
+
+We load the pre-processed SAR detection data and the overpass frequency data computed from the raw CSV files.
+```{r}
+# Load SAR data
+load(here::here("R", "Data", "SAR_fishing.Rdata"))
+
+# Load overpass frequency data computed from raw CSVs
+load(here::here("R", "Data", "SAR_overpasses_per_cell.Rdata"))
+```
+
+## Overpass frequency per grid cell
+
+We first examine the distribution of Sentinel-1 satellite overpass frequency across 0.1 degree grid cells over the 2017-2020 period. Each unique `scene_id` in the raw detection files represents one satellite overpass.
+```{r}
+# Summary statistics
+overpasses_per_cell %>%
+  summarise(
+    Min = min(n_overpasses),
+    `1st Qu.` = quantile(n_overpasses, 0.25),
+    Median = median(n_overpasses),
+    Mean = round(mean(n_overpasses), 2),
+    `3rd Qu.` = quantile(n_overpasses, 0.75),
+    Max = max(n_overpasses)
+  ) %>%
+  kable(caption = "Distribution of unique satellite overpasses per 0.1 degree grid cell (2017-2020)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+```{r}
+# Distribution plot
+ggplot(overpasses_per_cell, aes(x = n_overpasses)) +
+  geom_histogram(bins = 100, fill = "steelblue", color = "white", alpha = 0.8) +
+  scale_x_log10(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(
+    title = "Distribution of satellite overpasses per 0.1 degree grid cell",
+    subtitle = "2017-2020, log scale",
+    x = "Number of unique overpasses (log scale)",
+    y = "Number of grid cells"
+  )
+```
+```{r}
+# Map of overpass frequency
+world_map <- map_data("world")
+
+ggplot() +
+  geom_map(data = world_map, map = world_map,
+           aes(long = long, lat = lat, map_id = region),
+           color = "black", fill = "lightgray", linewidth = 0.1) +
+  geom_tile(data = overpasses_per_cell,
+            aes(x = lon_std, y = lat_std, fill = n_overpasses)) +
+  scale_fill_viridis(
+    option = "plasma",
+    name = "Number of unique overpasses",
+    guide = guide_colorbar(barwidth = 20, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_fixed(1.3) +
+  theme_minimal() +
+  labs(
+    title = "Sentinel-1 SAR satellite overpass frequency per 0.1 degree cell",
+    subtitle = "2017-2020",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+```
+
+The overpass frequency map reveals strong spatial variation in Sentinel-1 coverage. Northern Europe, the North Sea, the Mediterranean, and parts of East Asia show substantially higher overpass counts than tropical and Southern Hemisphere coastal regions. This is consistent with Sentinel-1 mission priorities, which concentrated coverage in European and high-latitude waters.
+
+## Normalised detections per overpass
+
+We now compare raw detection counts against detection counts normalised by the number of overpasses per cell.
+```{r}
+# Summary of normalised detections
+overpasses_per_cell %>%
+  summarise(
+    Min = min(detections_per_overpass),
+    `1st Qu.` = round(quantile(detections_per_overpass, 0.25), 5),
+    Median = round(median(detections_per_overpass), 5),
+    Mean = round(mean(detections_per_overpass), 5),
+    `3rd Qu.` = round(quantile(detections_per_overpass, 0.75), 5),
+    Max = round(max(detections_per_overpass), 5)
+  ) %>%
+  kable(caption = "Distribution of normalised fishing detections per overpass per 0.1 degree grid cell") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+```{r}
+# Map of normalised detections
+ggplot() +
+  geom_map(data = world_map, map = world_map,
+           aes(long = long, lat = lat, map_id = region),
+           color = "black", fill = "lightgray", linewidth = 0.1) +
+  geom_tile(data = overpasses_per_cell,
+            aes(x = lon_std, y = lat_std, fill = detections_per_overpass)) +
+  scale_fill_viridis(
+    option = "inferno",
+    direction = -1,
+    trans = "log1p",
+    name = "Fishing detections per overpass",
+    guide = guide_colorbar(barwidth = 20, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_fixed(1.3) +
+  theme_minimal() +
+  labs(
+    title = "Normalised SAR fishing vessel detections per satellite overpass",
+    subtitle = "2017-2020, fishing_score >= 0.9",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+```
+
+## Comparison: raw versus normalised detections
+
+To assess the magnitude of the bias introduced by unequal overpass frequency, we directly compare raw and normalised detection counts at the cell level.
+```{r}
+# Merge raw aggregated SAR data with overpass counts
+aggregated_SAR_fishing <- SAR_fishing %>%
+  mutate(
+    lat_rounded = round(lat, digits = 2),
+    lon_rounded = round(lon, digits = 2)
+  ) %>%
+  group_by(lat_rounded, lon_rounded) %>%
+  filter(fishing_score >= 0.9) %>%
+  summarise(
+    count = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    lon_std = floor(lon_rounded * 10) / 10,
+    lat_std = floor(lat_rounded * 10) / 10
+  ) %>%
+  group_by(lon_std, lat_std) %>%
+  summarise(count = sum(count), .groups = "drop")
+
+# Join with overpass data
+comparison_data <- aggregated_SAR_fishing %>%
+  left_join(
+    overpasses_per_cell %>% select(lon_std, lat_std, n_overpasses, detections_per_overpass),
+    by = c("lon_std", "lat_std")
+  )
+
+# Spearman correlation between raw and normalised counts
+cor_test <- cor.test(
+  comparison_data$count,
+  comparison_data$detections_per_overpass,
+  method = "spearman"
+)
+
+cat("Spearman correlation between raw and normalised detection counts:\n")
+cat("rho =", round(cor_test$estimate, 3), "\n")
+cat("p-value =", format(cor_test$p.value, scientific = TRUE), "\n")
+```
+```{r}
+# Scatterplot of raw vs normalised
+ggplot(comparison_data, aes(x = count, y = detections_per_overpass)) +
+  geom_point(alpha = 0.1, size = 0.5, color = "steelblue") +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  scale_x_log10(labels = scales::comma) +
+  scale_y_log10(labels = scales::comma) +
+  theme_minimal() +
+  labs(
+    title = "Raw versus normalised SAR fishing detections",
+    subtitle = paste0("Spearman rho = ", round(cor_test$estimate, 3)),
+    x = "Raw detection count (log scale)",
+    y = "Detections per overpass (log scale)"
+  )
+```
+
+## Key observations and recommendation
+
+Based on the analysis above, we can draw the following conclusions:
+
+**Overpass frequency varies substantially across regions.** The median number of overpasses per cell is 5, but the mean is 23.77 and the maximum is 986, reflecting strong spatial concentration of Sentinel-1 coverage in European and high-latitude waters. Regions identified as key conservation conflict areas in our manuscript, particularly the Mediterranean and European Atlantic, are among the most intensively sampled regions.
+
+**Normalisation dampens the Mediterranean signal.** After normalisation, East Asian seas (East China Sea, Korean Peninsula waters) remain the most intensively fished areas, consistent with AIS-based estimates. The Mediterranean signal is reduced relative to the unnormalized version, suggesting that part of the apparent high fishing pressure in that region may reflect higher overpass frequency rather than higher actual fishing activity.
+
+**Recommendation.** Given the magnitude of the spatial variation in overpass frequency and its correlation with key regions in our conservation conflict analysis, we recommend incorporating overpass normalisation into the main fishing pressure analysis. Specifically, `detections_per_overpass` should replace raw `count` as the SAR-derived fishing pressure metric in the random forest model. This will require re-running the model and updating the associated figures and results in the manuscript.
