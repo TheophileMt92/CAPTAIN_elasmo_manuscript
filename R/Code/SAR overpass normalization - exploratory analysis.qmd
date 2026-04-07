@@ -9,6 +9,10 @@ format:
     self-contained: true
     code-fold: true
     code-tools: true
+    css: ../Quarto_template/custom.css
+    include-before-body: ../Quarto_template/header.html
+    include-after-body: ../Quarto_template/footer_uzh.html
+    theme: none
 editor: visual
 execute:
   warning: false
@@ -22,6 +26,7 @@ This document explores whether the Sentinel-1 SAR vessel detection data used in 
 The SAR data used in this analysis are raw vessel detection records from Paolo et al. (2024, Nature), downloaded from the Global Fishing Watch data portal. Our analysis used 89 monthly CSV files covering 2017-2020, totalling 18,166,235 individual vessel detections.
 
 ## Libraries
+
 ```{r}
 library(tidyverse)
 library(here)
@@ -36,6 +41,7 @@ library(kableExtra)
 ## Load data
 
 We load the pre-processed SAR detection data and the overpass frequency data computed from the raw CSV files.
+
 ```{r}
 # Load SAR data
 load(here::here("R", "Data", "SAR_fishing.Rdata"))
@@ -47,6 +53,7 @@ load(here::here("R", "Data", "SAR_overpasses_per_cell.Rdata"))
 ## Overpass frequency per grid cell
 
 We first examine the distribution of Sentinel-1 satellite overpass frequency across 0.1 degree grid cells over the 2017-2020 period. Each unique `scene_id` in the raw detection files represents one satellite overpass.
+
 ```{r}
 # Summary statistics
 overpasses_per_cell %>%
@@ -61,6 +68,7 @@ overpasses_per_cell %>%
   kable(caption = "Distribution of unique satellite overpasses per 0.1 degree grid cell (2017-2020)") %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 ```
+
 ```{r}
 # Distribution plot
 ggplot(overpasses_per_cell, aes(x = n_overpasses)) +
@@ -75,6 +83,7 @@ ggplot(overpasses_per_cell, aes(x = n_overpasses)) +
     y = "Number of grid cells"
   )
 ```
+
 ```{r}
 # Map of overpass frequency
 world_map <- map_data("world")
@@ -109,6 +118,7 @@ The overpass frequency map reveals strong spatial variation in Sentinel-1 covera
 ## Normalised detections per overpass
 
 We now compare raw detection counts against detection counts normalised by the number of overpasses per cell.
+
 ```{r}
 # Summary of normalised detections
 overpasses_per_cell %>%
@@ -123,6 +133,7 @@ overpasses_per_cell %>%
   kable(caption = "Distribution of normalised fishing detections per overpass per 0.1 degree grid cell") %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 ```
+
 ```{r}
 # Map of normalised detections
 ggplot() +
@@ -155,6 +166,7 @@ ggplot() +
 ## Comparison: raw versus normalised detections
 
 To assess the magnitude of the bias introduced by unequal overpass frequency, we directly compare raw and normalised detection counts at the cell level.
+
 ```{r}
 # Merge raw aggregated SAR data with overpass counts
 aggregated_SAR_fishing <- SAR_fishing %>%
@@ -193,6 +205,7 @@ cat("Spearman correlation between raw and normalised detection counts:\n")
 cat("rho =", round(cor_test$estimate, 3), "\n")
 cat("p-value =", format(cor_test$p.value, scientific = TRUE), "\n")
 ```
+
 ```{r}
 # Scatterplot of raw vs normalised
 ggplot(comparison_data, aes(x = count, y = detections_per_overpass)) +
