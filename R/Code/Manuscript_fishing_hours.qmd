@@ -6,11 +6,14 @@ format:
   html:
     toc: true
     toc-location: right
-    css: custom.css
-    output-file: "Manuscript_fishing_hours.html"
     self-contained: true
     code-fold: true
     code-tools: true
+    css: ../Quarto_template/custom.css
+    include-before-body: ../Quarto_template/header.html
+    include-after-body: ../Quarto_template/footer_uzh.html
+    theme: none
+    output-file: "Manuscript_fishing_hours.html"
 editor: visual
 execute:
   warning: false
@@ -59,19 +62,73 @@ load(here::here("R","Data","AIS_fishing.Rdata"))
 #SAR data
 load(here::here("R","Data","SAR_fishing.Rdata"))
 
+# Load overpass frequency data
+load(here::here("R", "Data", "SAR_overpasses_per_cell.Rdata"))
+
 # Open the saved adjusted rasters
 Ports_adjusted <- raster(here::here("R", "Data", "distance-from-port-0.1deg-adjusted.tif"))
 Shore_adjusted <- raster(here::here("R", "Data", "distance-from-shore-0.1deg-adjusted.tif"))
 Bathy_adjusted <- raster(here::here("R", "Data", "bathymetry-0.1deg-adjusted.tif"))
 
-#
+# Load combined AIS and SAR data
 load(here::here("R", "Data","combined_data_O1deg.Rdata"))
 
-# Load the saved RF models
-rf_model_no_transform <- readRDS(here::here("R", "Data", "rf_model_no_transform.rds"))
-rf_model_original <- readRDS(here::here("R", "Data", "rf_model_original.rds"))
-rf_model_log <- readRDS(here::here("R", "Data", "rf_model_log.rds"))
-rf_model_fishing_log <- readRDS(here::here("R", "Data", "rf_model_fishing_log.rds"))
+# Join overpass frequency data and compute normalised detections
+combined_data_01deg <- combined_data_01deg %>%
+  left_join(
+    overpasses_per_cell %>% dplyr::select(lon_std, lat_std, n_overpasses, detections_per_overpass),
+    by = c("lon_std", "lat_std")
+  )
+
+# Load saved models (comment out training blocks above after first run)
+rf_norm_no_transform <- readRDS(here::here("R", "Data", "rf_norm_no_transform.rds"))
+rf_norm_fishing_log <- readRDS(here::here("R", "Data", "rf_norm_fishing_log.rds"))
+rf_norm_predictor_log <- readRDS(here::here("R", "Data", "rf_norm_predictor_log.rds"))
+rf_norm_both_log <- readRDS(here::here("R", "Data", "rf_norm_both_log.rds"))
+
+# Function to evaluate models
+evaluate_model <- function(model, data, log_target = FALSE) {
+  predictions <- predict(model, newdata = data)
+  if (log_target) {
+    predictions <- 10^predictions - 1
+  }
+  
+  actual <- if (log_target) 10^data$log_total_fishing_hours - 1 else data$total_fishing_hours
+  
+  # Basic Error Metrics
+  mae <- mean(abs(actual - predictions), na.rm = TRUE)
+  rmse <- sqrt(mean((actual - predictions)^2, na.rm = TRUE))
+  mape <- mean(abs((actual - predictions) / actual) * 100, na.rm = TRUE)
+  medae <- median(abs(actual - predictions), na.rm = TRUE)
+  
+  # R-squared (matching randomForest's % Var explained)
+  r_squared <- model$rsq[length(model$rsq)]
+  
+  # Adjusted R-squared
+  n <- length(actual)
+  p <- length(model$forest$independent.variable.names) # Number of predictors
+  adj_r_squared <- 1 - ((1 - r_squared) * (n - 1) / (n - p - 1))
+  
+  # Residual Analysis
+  residuals <- actual - predictions
+  mean_residual <- mean(residuals, na.rm = TRUE)
+  sd_residual <- sd(residuals, na.rm = TRUE)
+  
+  # Feature Importance (for Random Forest)
+  feature_importance <- importance(model)
+  
+  return(list(
+    "Mean absolute error" = mae,
+    "Root mean squared error" = rmse,
+    "Mean absolute percentage error" = mape,
+    "Median absolute error" = medae,
+    "R-squared" = r_squared,
+    "Adjusted R-squared" = adj_r_squared,
+    "Mean of residuals" = mean_residual,
+    "Standard deviation of residuals" = sd_residual,
+    "Feature importance" = feature_importance
+  ))
+}
 ```
 
 ## AIS data
@@ -177,6 +234,7 @@ The data is accessible from 2017 to today, we used four entire years of data (20
 #  map_df(~read_csv(.))
 
 # Aggregate fishing hours by latitude and longitude
+# Aggregate SAR detections
 aggregated_SAR_fishing <- SAR_fishing %>%
   mutate(
     lat_rounded = round(lat, digits = 2),
@@ -192,7 +250,7 @@ aggregated_SAR_fishing <- SAR_fishing %>%
   mutate(total_presence_score = round(total_presence_score, digits = 0)) %>%
   ungroup()
 
-# Standardize and aggregate SAR data
+# Standardize to 0.1 degree grid
 SAR_data_std <- aggregated_SAR_fishing %>%
   mutate(coords = map2(lon_rounded, lat_rounded, standardize_coords)) %>%
   mutate(
@@ -200,7 +258,20 @@ SAR_data_std <- aggregated_SAR_fishing %>%
     lat_std = map_dbl(coords, ~ .x$lat_std)
   ) %>%
   group_by(lon_std, lat_std) %>%
-  summarise(total_presence_score = sum(total_presence_score, na.rm = TRUE), .groups = "drop")
+  summarise(
+    total_presence_score = sum(total_presence_score, na.rm = TRUE),
+    count = sum(count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  # Join overpass frequency data
+  left_join(
+    overpasses_per_cell %>% dplyr::select(lon_std, lat_std, n_overpasses),
+    by = c("lon_std", "lat_std")
+  ) %>%
+  # Compute normalised detection count
+  mutate(
+    detections_per_overpass = count / n_overpasses
+  )
 
 # Create the world map
 world_map <- map_data("world")
@@ -329,6 +400,8 @@ save_kable(table_output, file = here::here("R","Outputs","summary_stats_table.pn
 ```
 
 ## Random forest model
+
+### Data preparation 
 
 Predicting fishing hours in areas with only SAR data at a 0.1 degree resolution. Using a random forest model of \>160,000 associations between SAR vessel detections and AIS fishing hours globally, geographical coordinates, distance to ports, distance to shore and bathymetry.
 
@@ -485,123 +558,95 @@ kable_output <- summary_stats %>%
 #kable_output
 
 # Prepare the training data
-training_data <- combined_data_with_rasters %>%
-  filter(has_AIS & has_SAR) %>%
-  dplyr::select(total_fishing_hours, total_presence_score, lon_std, lat_std, dist_shore, dist_ports, bathy) %>%
-  na.omit()
+#training_data <- combined_data_with_rasters %>%
+#  filter(has_AIS & has_SAR) %>%
+#  dplyr::select(
+#    total_fishing_hours, 
+#    detections_per_overpass,  # replaced total_presence_score
+#    lon_std, lat_std, 
+#    dist_shore, dist_ports, bathy
+#  ) %>%
+#  na.omit()
 ```
 
-### Comparison of transformations in models
+
+### Random forest with normalised SAR detections 
 
 ```{r}
-# Prepare the data
-#load(here::here("R","Data","training_data.Rdata"))
+# ---- Prepare training data with normalised SAR detections ----
+# Keep the first occurrence of each coordinate pair
+combined_data_01deg <- unique(combined_data_01deg, by = c("lon_std", "lat_std"))
+setDT(combined_data_01deg)
 
-#training_data_log <- training_data %>%
-#  mutate(
-#    log_total_presence_score = log10(total_presence_score + 1),
-#    log_total_fishing_hours = log10(total_fishing_hours + 1)
-#  )
+# Perform the join with raster data
+combined_data_with_rasters <- raster_df[combined_data_01deg,
+                                        on = .(lon_std, lat_std),
+                                        nomatch = 0]
 
-# Function to run a single model
-#run_model <- function(formula, data) {
-#  randomForest(
-#    formula,
-#    data = data,
-#    ntree = 500,
-#    importance = TRUE
-#  )
-#}
+# Convert back to dataframe
+combined_data_with_rasters <- as.data.frame(combined_data_with_rasters)
 
-# Set up parallel processing
-#num_cores <- detectCores() - 1  # Use all but one core
-#cl <- makeCluster(num_cores)
+# Prepare training data using detections_per_overpass as normalised SAR predictor
+training_data <- combined_data_with_rasters %>%
+  filter(has_AIS & has_SAR) %>%
+  dplyr::select(
+    total_fishing_hours,
+    detections_per_overpass,
+    lon_std, lat_std,
+    dist_shore, dist_ports, bathy
+  ) %>%
+  na.omit() %>%
+  mutate(
+    log_total_fishing_hours = log10(total_fishing_hours + 1),
+    log_detections_per_overpass = log10(detections_per_overpass + 1)
+  )
 
-# Export necessary objects to the cluster
-#clusterExport(cl, c("training_data_log", "run_model"))
+cat("Training data dimensions:", nrow(training_data), "rows,", ncol(training_data), "columns\n")
+cat("Missing values in detections_per_overpass:", sum(is.na(training_data$detections_per_overpass)), "\n")
 
-# Load required packages on each cluster
-#clusterEvalQ(cl, library(randomForest))
+# ---- Train normalised random forest model ----
 
-# Define the models
-#models <- list(
-#  no_transform = as.formula(total_fishing_hours ~ total_presence_score + lon_std + lat_std + dist_shore + #dist_ports + bathy),
-#  original = as.formula(total_fishing_hours ~ log_total_presence_score + lon_std + lat_std + dist_shore + #dist_ports + bathy),
-#  log = as.formula(log_total_fishing_hours ~ log_total_presence_score + lon_std + lat_std + dist_shore + #dist_ports + bathy)
-#)
-
-# Run models in parallel
-#results <- parLapply(cl, models, function(formula) run_model(formula, training_data_log))
-
-# Stop the cluster
-#stopCluster(cl)
-
-# Save the models
-#rf_model_no_transform <- results[[1]]
-#rf_model_original <- results[[2]]
-#rf_model_log <- results[[3]]
-
-# Save models to files
-#saveRDS(rf_model_no_transform, "rf_model_no_transform.rds")
-#saveRDS(rf_model_original, "rf_model_original.rds")
-#saveRDS(rf_model_log, "rf_model_log.rds")
-
-# Add the new model with only total_fishing_hours log-transformed
-#rf_model_fishing_log <- randomForest(
-#  log_total_fishing_hours ~ total_presence_score + lon_std + lat_std + dist_shore + dist_ports + bathy,
-#  data = training_data_log,
+# No transform
+#rf_norm_no_transform <- randomForest(
+#  total_fishing_hours ~ detections_per_overpass + lon_std + lat_std +
+#    dist_shore + dist_ports + bathy,
+#  data = training_data,
 #  ntree = 500,
 #  importance = TRUE
 #)
+#saveRDS(rf_norm_no_transform, here::here("R", "Data", "rf_norm_no_transform.rds"))
 
-# Save the new model
-#saveRDS(rf_model_fishing_log, "rf_model_fishing_log.rds")
+# Fishing hours log only
+#rf_norm_fishing_log <- randomForest(
+#  log_total_fishing_hours ~ detections_per_overpass + lon_std + lat_std +
+#    dist_shore + dist_ports + bathy,
+#  data = training_data,
+#  ntree = 500,
+#  importance = TRUE
+#)
+#saveRDS(rf_norm_fishing_log, here::here("R", "Data", "rf_norm_fishing_log.rds"))
 
-# Function to evaluate models
-evaluate_model <- function(model, data, log_target = FALSE) {
-  predictions <- predict(model, newdata = data)
-  if (log_target) {
-    predictions <- 10^predictions - 1
-  }
-  
-  actual <- data$total_fishing_hours
-  
-  # Basic Error Metrics
-  mae <- mean(abs(actual - predictions), na.rm = TRUE)
-  rmse <- sqrt(mean((actual - predictions)^2, na.rm = TRUE))
-  mape <- mean(abs((actual - predictions) / actual) * 100, na.rm = TRUE)
-  medae <- median(abs(actual - predictions), na.rm = TRUE)
-  
-  # R-squared (matching randomForest's % Var explained)
-  r_squared <- model$rsq[length(model$rsq)]
-  
-  # Adjusted R-squared
-  n <- length(actual)
-  p <- length(model$forest$independent.variable.names) # Number of predictors
-  adj_r_squared <- 1 - ((1 - r_squared) * (n - 1) / (n - p - 1))
-  
-  # Residual Analysis
-  residuals <- actual - predictions
-  mean_residual <- mean(residuals, na.rm = TRUE)
-  sd_residual <- sd(residuals, na.rm = TRUE)
-  
-  # Feature Importance (for Random Forest)
-  feature_importance <- importance(model)
-  
-  return(list(
-    "Mean Absolute Error" = mae,
-    "Root Mean Squared Error" = rmse,
-    "Mean Absolute Percentage Error" = mape,
-    "Median Absolute Error" = medae,
-    "R-Squared" = r_squared,
-    "Adjusted R-Squared" = adj_r_squared,
-    "Mean of Residuals" = mean_residual,
-    "Standard Deviation of Residuals" = sd_residual,
-    "Feature Importance" = feature_importance
-  ))
-}
+# Predictor log only
+#rf_norm_predictor_log <- randomForest(
+#  total_fishing_hours ~ log_detections_per_overpass + lon_std + lat_std +
+#    dist_shore + dist_ports + bathy,
+#  data = training_data,
+#  ntree = 500,
+#  importance = TRUE
+#)
+#saveRDS(rf_norm_predictor_log, here::here("R", "Data", #"rf_norm_predictor_log.rds"))
 
-# Evaluate all models
+# Both log
+#rf_norm_both_log <- randomForest(
+#  log_total_fishing_hours ~ log_detections_per_overpass + lon_std + lat_std +
+#    dist_shore + dist_ports + bathy,
+#  data = training_data,
+#  ntree = 500,
+#  importance = TRUE
+#)
+#saveRDS(rf_norm_both_log, here::here("R", "Data", "rf_norm_both_log.rds"))
+
+# ---- Evaluate normalised model ----
 validation_data <- combined_data_with_rasters %>%
   mutate(
     data_category = case_when(
@@ -609,127 +654,215 @@ validation_data <- combined_data_with_rasters %>%
       has_AIS & !has_SAR ~ "Only AIS",
       !has_AIS & has_SAR ~ "Only SAR",
       TRUE ~ "No fishing detected"
+    ),
+    log_total_fishing_hours = log10(total_fishing_hours + 1)
+  ) %>%
+  filter(data_category == "Both AIS and SAR")
+
+results_normalized <- evaluate_model(
+  rf_norm_fishing_log, 
+  validation_data, 
+  log_target = TRUE
+)
+
+# ---- Generate predictions for SAR-only cells ----
+prediction_data <- combined_data_with_rasters %>%
+  dplyr::select(detections_per_overpass, lon_std, lat_std, dist_shore, dist_ports, bathy)
+
+log_predictions <- predict(rf_norm_fishing_log, newdata = prediction_data)
+predictions <- 10^log_predictions - 1
+
+# Add predictions to combined_data_01deg
+combined_data_01deg <- combined_data_01deg %>%
+  mutate(
+    predicted_fishing_hours = case_when(
+      has_AIS ~ total_fishing_hours,
+      has_SAR ~ predictions[match(
+        paste(lon_std, lat_std),
+        paste(prediction_data$lon_std, prediction_data$lat_std)
+      )],
+      TRUE ~ 0
     )
   )
 
-validation_data <- validation_data %>% filter(data_category == "Both AIS and SAR")
+# ---- Violin plot: observed vs predicted ----
+plot_data <- combined_data_01deg %>%
+  mutate(
+    ais_fishing_hours = if_else(has_AIS, total_fishing_hours, NA_real_),
+    sar_predicted_hours = if_else(!has_AIS & has_SAR, predicted_fishing_hours, NA_real_)
+  ) %>%
+  dplyr::select(ais_fishing_hours, sar_predicted_hours) %>%
+  pivot_longer(cols = c(ais_fishing_hours, sar_predicted_hours),
+               names_to = "type",
+               values_to = "hours") %>%
+  filter(!is.na(hours))
 
-# Evaluate all models
-results_no_transform <- evaluate_model(rf_model_no_transform, validation_data)
+violin_plot <- ggplot(plot_data, aes(x = type, y = hours, fill = type)) +
+  geom_violin(trim = FALSE) +
+  geom_boxplot(width = 0.1, fill = "white", color = "black",
+               alpha = 0.5, outlier.shape = NA) +
+  scale_y_log10(labels = scales::comma_format(accuracy = 1)) +
+  scale_x_discrete(labels = c("ais_fishing_hours" = "AIS Data",
+                               "sar_predicted_hours" = "SAR Predictions (normalised)")) +
+  labs(title = "Comparison of AIS fishing hours and normalised SAR predicted fishing hours",
+       subtitle = "AIS data for AIS-covered areas, normalised predictions for SAR-only areas",
+       x = "", y = "Fishing hours (log scale)", fill = "Type") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
 
-validation_data_logpres <- validation_data %>%
-  mutate(log_total_presence_score = log10(total_presence_score + 1))
+print(violin_plot)
 
-results_original <- evaluate_model(rf_model_original, validation_data_logpres)
+# ---- Maps of predictions ----
+world_map <- map_data("world")
 
-# Add evaluation for the new model (fishing hours log-transformed)
-results_fishing_log <- evaluate_model(rf_model_fishing_log, validation_data, log_target = TRUE)
+# Global map
+predicted_plot <- ggplot() +
+  geom_map(data = world_map, map = world_map,
+           aes(long, lat, map_id = region),
+           color = "black", fill = "lightgray", linewidth = 0.1) +
+  geom_tile(data = combined_data_01deg,
+            aes(x = lon_std, y = lat_std, fill = predicted_fishing_hours)) +
+  scale_fill_viridis(
+    option = "inferno",
+    direction = -1,
+    trans = "log1p",
+    name = "Fishing hours (2017-2020)",
+    breaks = c(0, 1, 10, 100, 1000, 10000, 100000, 1000000),
+    labels = scales::comma,
+    guide = guide_colorbar(barwidth = 20, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_fixed(1.3) +
+  theme_minimal() +
+  labs(title = "Global fishing hours (0.1 degree resolution)",
+       subtitle = "AIS data and normalised random forest predictions from SAR data",
+       x = "Longitude", y = "Latitude") +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "horizontal",
+    legend.box = "vertical",
+    legend.margin = ggplot2::margin(t = 20, r = 0, b = 0, l = 0),
+    legend.title = element_text(margin = ggplot2::margin(b = 10))
+  )
 
-results_log <- evaluate_model(rf_model_log, validation_data_logpres, log_target = TRUE)
+print(predicted_plot)
 
-# Create a data frame with the results
-results_df <- data.frame(
+ggsave(here::here("R", "Outputs", "predicted_plot_SAR_normalized.png"),
+       plot = predicted_plot,
+       width = 12, height = 8, dpi = 300)
+```
+
+### Comparison of transformations - normalised models
+```{r}
+validation_data_norm <- combined_data_with_rasters %>%
+  mutate(
+    data_category = case_when(
+      has_AIS & has_SAR ~ "Both AIS and SAR",
+      has_AIS & !has_SAR ~ "Only AIS",
+      !has_AIS & has_SAR ~ "Only SAR",
+      TRUE ~ "No fishing detected"
+    )
+  ) %>%
+  filter(data_category == "Both AIS and SAR") %>%
+  mutate(
+    log_detections_per_overpass = log10(detections_per_overpass + 1),
+    log_total_fishing_hours = log10(total_fishing_hours + 1)
+  )
+
+results_norm_no_transform <- evaluate_model(rf_norm_no_transform, validation_data_norm)
+results_norm_fishing_log <- evaluate_model(rf_norm_fishing_log, validation_data_norm, log_target = TRUE)
+results_norm_predictor_log <- evaluate_model(rf_norm_predictor_log, validation_data_norm)
+results_norm_both_log <- evaluate_model(rf_norm_both_log, validation_data_norm, log_target = TRUE)
+
+results_comparison <- data.frame(
   Metric = c(
-  "Mean absolute error",                    # MAE
-  "Root mean squared error",                # RMSE
-  "Mean absolute percentage error",         # MAPE
-  "Median absolute error",                  # MdAE
-  "R-squared",                              # R² or R2
-  "Adjusted R-squared",                     # Adj. R²
-  "Mean of residuals",
-  "Standard deviation of residuals"
-),
-  No_Transform = c(results_no_transform$`Mean Absolute Error`, results_no_transform$`Root Mean Squared Error`, results_no_transform$`Mean Absolute Percentage Error`, results_no_transform$`Median Absolute Error`, results_no_transform$`R-Squared`, results_no_transform$`Adjusted R-Squared`, results_no_transform$`Mean of Residuals`, results_no_transform$`Standard Deviation of Residuals`),
-  Fishing_Log = c(results_fishing_log$`Mean Absolute Error`, results_fishing_log$`Root Mean Squared Error`, results_fishing_log$`Mean Absolute Percentage Error`, results_fishing_log$`Median Absolute Error`, results_fishing_log$`R-Squared`, results_fishing_log$`Adjusted R-Squared`, results_fishing_log$`Mean of Residuals`, results_fishing_log$`Standard Deviation of Residuals`),
-  Presence_Log = c(results_original$`Mean Absolute Error`, results_original$`Root Mean Squared Error`, results_original$`Mean Absolute Percentage Error`, results_original$`Median Absolute Error`, results_original$`R-Squared`, results_original$`Adjusted R-Squared`, results_original$`Mean of Residuals`, results_original$`Standard Deviation of Residuals`),
-  Both_Log = c(results_log$`Mean Absolute Error`, results_log$`Root Mean Squared Error`, results_log$`Mean Absolute Percentage Error`, results_log$`Median Absolute Error`, results_log$`R-Squared`, results_log$`Adjusted R-Squared`, results_log$`Mean of Residuals`, results_log$`Standard Deviation of Residuals`)
+    "Mean absolute error", "Root mean squared error",
+    "Mean absolute percentage error", "Median absolute error",
+    "R-squared", "Adjusted R-squared",
+    "Mean of residuals", "Standard deviation of residuals"
+  ),
+  No_Transform = round(c(
+    results_norm_no_transform$`Mean absolute error`,
+    results_norm_no_transform$`Root mean squared error`,
+    results_norm_no_transform$`Mean absolute percentage error`,
+    results_norm_no_transform$`Median absolute error`,
+    results_norm_no_transform$`R-squared`,
+    results_norm_no_transform$`Adjusted R-squared`,
+    results_norm_no_transform$`Mean of residuals`,
+    results_norm_no_transform$`Standard deviation of residuals`
+  ), 2),
+  Fishing_Log = round(c(
+    results_norm_fishing_log$`Mean absolute error`,
+    results_norm_fishing_log$`Root mean squared error`,
+    results_norm_fishing_log$`Mean absolute percentage error`,
+    results_norm_fishing_log$`Median absolute error`,
+    results_norm_fishing_log$`R-squared`,
+    results_norm_fishing_log$`Adjusted R-squared`,
+    results_norm_fishing_log$`Mean of residuals`,
+    results_norm_fishing_log$`Standard deviation of residuals`
+  ), 2),
+  Predictor_Log = round(c(
+    results_norm_predictor_log$`Mean absolute error`,
+    results_norm_predictor_log$`Root mean squared error`,
+    results_norm_predictor_log$`Mean absolute percentage error`,
+    results_norm_predictor_log$`Median absolute error`,
+    results_norm_predictor_log$`R-squared`,
+    results_norm_predictor_log$`Adjusted R-squared`,
+    results_norm_predictor_log$`Mean of residuals`,
+    results_norm_predictor_log$`Standard deviation of residuals`
+  ), 2),
+  Both_Log = round(c(
+    results_norm_both_log$`Mean absolute error`,
+    results_norm_both_log$`Root mean squared error`,
+    results_norm_both_log$`Mean absolute percentage error`,
+    results_norm_both_log$`Median absolute error`,
+    results_norm_both_log$`R-squared`,
+    results_norm_both_log$`Adjusted R-squared`,
+    results_norm_both_log$`Mean of residuals`,
+    results_norm_both_log$`Standard deviation of residuals`
+  ), 2)
 )
 
-# Create and save the table as HTML
-table_output <- kable(results_df, format = "html", digits = 2,
-      col.names = c("Metric", "No transform", "Fishing hours log", "Presence score log", "Both log"),
-      caption = "Model performance comparison") %>%
+kable(results_comparison, format = "html", digits = 2,
+      col.names = c("Metric", "No transform", "Fishing hours log",
+                    "Predictor log", "Both log"),
+      caption = "Model performance comparison - normalised SAR detections per overpass") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
                 full_width = FALSE) %>%
   add_header_above(c(" " = 1, "Models" = 4)) %>%
   column_spec(1, bold = TRUE)
-
-# Save as HTML first
-save_kable(table_output, file = here::here("R", "Outputs", "model_performance.html"))
-
-# Then screenshot with custom viewport
-webshot(here::here("R", "Outputs", "model_performance.html"), 
-        here::here("R", "Outputs", "model_performance.png"),
-        vwidth = 800,   # Width in pixels
-        vheight = 400,  # Height in pixels - adjust as needed
-        zoom = 2)
-
 ```
+
 
 #### Interpretation of model comparison metrics
 
-Based on the provided performance metrics, I would choose the Fishing Hours Log-Transformed Model. Here's the reasoning:
+Four model variants were compared to identify the optimal transformation strategy 
+for normalised SAR detections per overpass. The results clearly favour 
+log-transforming the response variable (fishing hours).
 
-1.  R-Squared and Adjusted R-Squared: The Fishing Hours Log model has the highest R-squared (0.8239) and Adjusted R-squared values, indicating it explains the most variance in the data.
-2.  Mean Absolute Percentage Error (MAPE): This model has a significantly lower MAPE (69.71%) compared to the No Transform and Presence Log models (both over 1200%). This suggests much better relative accuracy. Median Absolute Error: It has the lowest median absolute error (10.19), which indicates good performance on typical cases.
-3.  Root Mean Squared Error (RMSE): While higher than the No Transform model, the difference isn't as dramatic as the improvement in MAPE.
-4.  Mean Absolute Error (MAE): Although higher than No Transform and Presence Log models, this should be considered in context with other metrics.
+The fishing hours log and both-log models achieve the highest R-squared (0.77) 
+and the lowest MAPE (85.64% and 86.25% respectively), compared to over 1,780% 
+for models without response transformation. The median absolute error is similarly 
+improved, dropping from ~33 hours to ~12 hours with log transformation of the 
+response. Log-transforming the predictor (detections per overpass) alone provides 
+no meaningful improvement over the no-transform version across any metric.
 
-The Both Log model performs very similarly to the Fishing Hours Log model, but the latter edges it out slightly in most metrics.
+The fishing hours log model (log_total_fishing_hours ~ detections_per_overpass) 
+is selected as the final model. It performs marginally better than the both-log 
+variant on MAPE (85.64% vs 86.25%) and RMSE (1413 vs 1415), and is simpler to 
+interpret since the predictor remains on its original scale.
 
-The No Transform and Presence Log models, despite having lower MAE and RMSE, have extremely high MAPE values, suggesting they might be making large relative errors, especially on smaller values.
-
-The logarithmic transformation of fishing hours seems to have addressed some issues with the data distribution, leading to more balanced performance across different scales of the target variable.
-
-In conclusion, the Fishing Hours Log-Transformed Model appears to offer the best overall performance, particularly in terms of explained variance and relative error metrics. However, the choice might depend on the specific requirements of your application, such as whether absolute or relative errors are more important in your context.
+Compared to the previous non-normalised model (R-squared = 0.82, MAPE = 69.71%), 
+performance is slightly reduced. This is expected: normalisation by overpass 
+frequency removes a spurious signal that the original model was exploiting, namely 
+systematic variation in detection counts driven by uneven satellite coverage rather than true differences in fishing intensity. The normalised model is therefore 
+preferred on methodological grounds despite the modest reduction in predictive 
+accuracy.
 
 ### Selected Model performance
 
 ```{r}
-
-evaluate_model <- function(model, data, log_target = FALSE) {
-  predictions <- predict(model, newdata = data)
-  if (log_target) {
-    predictions <- 10^predictions - 1
-  }
-  
-  actual <- if (log_target) 10^data$log_total_fishing_hours - 1 else data$total_fishing_hours
-  
-  # Basic Error Metrics
-  mae <- mean(abs(actual - predictions), na.rm = TRUE)
-  rmse <- sqrt(mean((actual - predictions)^2, na.rm = TRUE))
-  mape <- mean(abs((actual - predictions) / actual) * 100, na.rm = TRUE)
-  medae <- median(abs(actual - predictions), na.rm = TRUE)
-  
-  # R-squared (matching randomForest's % Var explained)
-  r_squared <- model$rsq[length(model$rsq)]
-  
-  # Adjusted R-squared
-  n <- length(actual)
-  p <- length(model$forest$independent.variable.names)
-  adj_r_squared <- 1 - ((1 - r_squared) * (n - 1) / (n - p - 1))
-  
-  # Residual Analysis
-  residuals <- actual - predictions
-  mean_residual <- mean(residuals, na.rm = TRUE)
-  sd_residual <- sd(residuals, na.rm = TRUE)
-  
-  # Feature Importance (for Random Forest)
-  feature_importance <- importance(model)
-  
-  return(list(
-    "Mean absolute error" = mae,
-    "Root mean squared error" = rmse,
-    "Mean absolute percentage error" = mape,
-    "Median absolute error" = medae,  # FIXED TYPO
-    "R-squared" = r_squared,
-    "Adjusted R-squared" = adj_r_squared,  # FIXED CASE
-    "Mean of residuals" = mean_residual,
-    "Standard deviation of residuals" = sd_residual,
-    "Feature importance" = feature_importance
-  ))
-}
-
 validation_data <- combined_data_with_rasters %>%
   mutate(
     data_category = case_when(
@@ -743,7 +876,7 @@ validation_data <- combined_data_with_rasters %>%
 
 # Evaluate the model
 validation_data <- validation_data %>% filter(data_category == "Both AIS and SAR")
-results_rf_fishing_log <- evaluate_model(rf_model_fishing_log, validation_data, log_target = TRUE)
+results_rf_fishing_log <- evaluate_model(rf_norm_fishing_log, validation_data, log_target = TRUE)
 
 # Create a dataframe for the table
 results_table <- data.frame(
@@ -806,15 +939,19 @@ webshot(here::here("R", "Outputs", "feature_importance.html"),
         zoom = 2)
 ```
 
-### Maps of predictions
+## Maps of predictions
 
 ```{r}
 # Prepare the prediction data
 prediction_data <- combined_data_with_rasters %>%
-  dplyr::select(total_presence_score, lon_std, lat_std, dist_shore, dist_ports, bathy)
+  dplyr::select(
+    detections_per_overpass,  # replaced total_presence_score
+    lon_std, lat_std, 
+    dist_shore, dist_ports, bathy
+  )
 
 # Make predictions
-log_predictions <- predict(rf_model_fishing_log, newdata = prediction_data)
+log_predictions <- predict(rf_norm_fishing_log, newdata = prediction_data)
 
 # Back-transform predictions
 predictions <- 10^log_predictions - 1
