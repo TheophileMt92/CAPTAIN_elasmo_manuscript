@@ -685,6 +685,20 @@ combined_data_01deg <- combined_data_01deg %>%
     )
   )
 
+aggregated_data_normalised <- combined_data_01deg %>%
+  mutate(
+    lon_05deg = floor(lon_std / 0.5) * 0.5,
+    lat_05deg = floor(lat_std / 0.5) * 0.5
+  ) %>%
+  group_by(lon_05deg, lat_05deg) %>%
+  summarise(
+    predicted_fishing_hours = sum(predicted_fishing_hours, na.rm = TRUE),
+    n_cells = n(),
+    .groups = "drop"
+  )
+
+save(aggregated_data_normalised,
+     file = here::here("R", "Data", "Predicted_Fishing_Hours_05Deg_normalised.Rdata"))
 # ---- Violin plot: observed vs predicted ----
 plot_data <- combined_data_01deg %>%
   mutate(
