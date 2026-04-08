@@ -6,11 +6,14 @@ format:
   html:
     toc: true
     toc-location: right
-    css: custom.css
-    output-file: "Manuscript_CAPTAIN_analyses.html"
     self-contained: true
     code-fold: true
     code-tools: true
+    css: ../Quarto_template/custom.css
+    include-before-body: ../Quarto_template/header.html
+    include-after-body: ../Quarto_template/footer_uzh.html
+    theme: none
+    output-file: "Manuscript_CAPTAIN_analyses.html"
 editor: visual
 execute:
   warning: false
@@ -2593,6 +2596,44 @@ ggsave(here::here("R", "Outputs", "Fig.S11_ecoregion_priority_fishing.png"),
        width = 12, height = 10, dpi = 300, bg = "white")
 
 knitr::include_graphics(here::here("R", "Outputs", "Fig.S11_ecoregion_priority_fishing.png"))
+
+# Print key ecoregions for results text update
+key_ecoregions <- c(
+  "Torres Strait Northern Great Barrier Reef",
+  "Uruguay-Buenos Aires Shelf",
+  "Southern China",
+  "East China Sea",
+  "Faroe Plateau",
+  "Exmouth to Broome",
+  "Arafura Sea",
+  "Yellow Sea",
+  "Gulf of Tonkin",
+  "Adriatic Sea",
+  "Ionian Sea",
+  "Western Mediterranean",
+  "Celtic Seas"
+)
+
+cat("IUCN:\n")
+ecoregion_combined_iucn %>%
+  filter(ECOREGION %in% key_ecoregions) %>%
+  arrange(desc(mean_priority)) %>%
+  dplyr::select(ECOREGION, mean_priority, mean_fishing_hours) %>%
+  print()
+
+cat("\nFUSE:\n")
+ecoregion_combined_fuse %>%
+  filter(ECOREGION %in% key_ecoregions) %>%
+  arrange(desc(mean_priority)) %>%
+  dplyr::select(ECOREGION, mean_priority, mean_fishing_hours) %>%
+  print()
+
+cat("\nEDGE2:\n")
+ecoregion_combined_edge2 %>%
+  filter(ECOREGION %in% key_ecoregions) %>%
+  arrange(desc(mean_priority)) %>%
+  dplyr::select(ECOREGION, mean_priority, mean_fishing_hours) %>%
+  print()
 ```
 
 
