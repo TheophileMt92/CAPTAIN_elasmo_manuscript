@@ -1,0 +1,2259 @@
+---
+title: "Fishing_exposure"
+author: "Théophile L. Mouton"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-location: right
+    self-contained: true
+    code-fold: true
+    code-tools: true
+    css: ../Quarto_template/custom.css
+    include-before-body: ../Quarto_template/header.html
+    include-after-body: ../Quarto_template/footer_uzh.html
+    theme: none
+    output-file: "Fishing_exposure.html"
+editor: visual
+execute:
+  warning: false
+  error: false
+params:
+  printlabels: TRUE
+---
+
+## Fishing Exposure Index : original approach 
+
+```{r}
+#| label: fishing-exposure-index
+#| echo: true
+#| warning: false
+#| message: false
+
+#======================
+# FISHING EXPOSURE INDEX (FEI) CALCULATION
+#======================
+
+# --- 1. Prepare the base grid coordinates ---
+# Using your existing raster template (already loaded as 'r')
+coords <- as.data.frame(coordinates(r))
+names(coords) <- c("Longitude", "Latitude")
+coords$PUID <- 1:nrow(coords)
+
+# --- 2. Prepare fishing effort data at 0.5° resolution ---
+# aggregated_data already loaded from Predicted_Fishing_Hours_05Deg.Rdata
+fishing_effort <- aggregated_data %>%
+  rename(
+    Longitude = lon_05deg,
+    Latitude = lat_05deg,
+    FishingHours = predicted_fishing_hours
+  ) %>%
+  mutate(FishingHours_Log = log1p(FishingHours))
+
+# Join fishing effort to the base grid
+coords_with_fishing <- coords %>%
+  left_join(fishing_effort, by = c("Longitude", "Latitude")) %>%
+  mutate(
+    FishingHours = replace_na(FishingHours, 0),
+    FishingHours_Log = replace_na(FishingHours_Log, 0),
+    has_fishing_data = FishingHours > 0
+  )
+
+# --- 3. Load all species range rasters ---
+tif_folder <- here::here("R", "Data", "tif files continental")
+tif_files <- list.files(tif_folder, pattern = "\\.tif$", full.names = TRUE)
+
+cat("Found", length(tif_files), "species range files\n")
+
+# Function to extract species name from filename
+extract_species_name <- function(filepath) {
+
+  basename(filepath) %>%
+    gsub("\\.tif$", "", .) %>%
+    gsub("_", " ", .)
+}
+
+# Function to get presence cells for a species
+get_species_presence <- function(tif_path) {
+  sp_raster <- raster(tif_path)
+  sp_values <- values(sp_raster)
+  which(sp_values > 0 & !is.na(sp_values))
+}
+
+# Build species presence list
+cat("Extracting species presence data...\n")
+
+species_presence_list <- map(tif_files, function(f) {
+  tryCatch({
+    get_species_presence(f)
+  }, error = function(e) {
+    warning(paste("Error reading:", f))
+    return(integer(0))
+  })
+}, .progress = TRUE)
+
+names(species_presence_list) <- sapply(tif_files, extract_species_name)
+
+# --- 4. Calculate FEI for each species ---
+cat("Calculating Fishing Exposure Index for each species...\n")
+
+FEI_results <- map_dfr(names(species_presence_list), function(sp_name) {
+  
+  presence_cells <- species_presence_list[[sp_name]]
+  
+  if (length(presence_cells) == 0) {
+    return(tibble(
+      Species = sp_name,
+      Range_Size = 0,
+      Cells_With_Fishing_Data = NA,
+      Fishing_Data_Coverage = NA,
+      FEI_raw = NA,
+      FEI_log = NA,
+      Total_Fishing_Hours = NA
+    ))
+  }
+  
+  sp_fishing <- coords_with_fishing %>%
+    filter(PUID %in% presence_cells)
+  
+  tibble(
+    Species = sp_name,
+    Range_Size = length(presence_cells),
+    Cells_With_Fishing_Data = sum(sp_fishing$has_fishing_data),
+    Fishing_Data_Coverage = sum(sp_fishing$has_fishing_data) / length(presence_cells),
+    FEI_raw = mean(sp_fishing$FishingHours, na.rm = TRUE),
+    FEI_log = mean(sp_fishing$FishingHours_Log, na.rm = TRUE),
+    Total_Fishing_Hours = sum(sp_fishing$FishingHours, na.rm = TRUE)
+  )
+}, .progress = TRUE)
+
+# --- 5. Merge with species conservation metrics ---
+FEI_results <- FEI_results %>%
+  left_join(
+    shark_metrics %>% 
+      rename(Species = `Species name`) %>%
+      mutate(Species = gsub("_", " ", Species)) %>%
+      dplyr::select(Species, IUCN, FUSE, EDGE2),
+    by = "Species"
+  )
+
+# --- 6. Summary statistics ---
+cat("\n=== FEI SUMMARY STATISTICS ===\n")
+cat("Total species processed:", nrow(FEI_results), "\n")
+cat("Species with fishing data coverage >50%:", 
+    sum(FEI_results$Fishing_Data_Coverage > 0.5, na.rm = TRUE), "\n")
+cat("Species with fishing data coverage <10%:", 
+    sum(FEI_results$Fishing_Data_Coverage < 0.1, na.rm = TRUE), "\n")
+
+cat("\nFEI (log-transformed) distribution:\n")
+print(summary(FEI_results$FEI_log))
+
+# --- 7. Top exposed species table ---
+FEI_top20 <- FEI_results %>%
+  filter(Fishing_Data_Coverage >= 0.5) %>%
+  arrange(desc(FEI_log)) %>%
+  dplyr::select(Species, IUCN, FUSE, EDGE2, FEI_log, Range_Size, Fishing_Data_Coverage) %>%
+  head(20)
+
+# Save the FEI top 20 species table
+fei_top20_table <- kable(FEI_top20,
+      format = "html",
+      digits = 2,
+      col.names = c("Species", "IUCN", "FUSE", "EDGE2", "FEI (log)", 
+                    "Range Size", "Fishing Coverage"),
+      caption = "Top 20 species by Fishing Exposure Index (FEI)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+save_kable(fei_top20_table, 
+           file = here::here("R", "Outputs", "Table_top20_FEI_species.png"),
+           zoom = 2)
+
+cat("FEI top 20 species table saved.\n")
+
+# --- 8. Save FEI results ---
+saveRDS(FEI_results, here::here("R", "Data", "Species_FEI_results.rds"))
+write_csv(FEI_results, here::here("R", "Outputs", "Species_FEI_results.csv"))
+
+cat("\nFEI results saved.\n")
+```
+
+## Standardised Fishing Exposure Index
+
+```{r}
+#| label: standardized-fishing-exposure-index
+#| echo: true
+#| warning: false
+#| message: false
+
+#======================
+# STANDARDIZED FISHING EXPOSURE INDEX (SFEI)
+# Null model: shuffle fishing effort within FAO zones
+#======================
+
+library(furrr)
+library(future)
+
+# --- 1. Load FAO Major Fishing Areas ---
+fao_zones <- st_read(here::here("R", "Data", "FAO_Major_Fishing_Areas.geojson"))
+
+# Repair geometries and disable S2
+fao_zones <- fao_zones %>% st_make_valid()
+sf_use_s2(FALSE)
+
+cat("Number of FAO zones:", nrow(fao_zones), "\n")
+
+# --- 2. Assign each grid cell to FAO zones (rasterization method) ---
+sf_use_s2(FALSE)
+fao_zones <- fao_zones %>% st_make_valid()
+
+# Create a numeric ID for each FAO zone
+fao_zones$FAO_ID <- as.numeric(as.factor(fao_zones$F_AREA))
+fao_lookup <- fao_zones %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(FAO_ID, FAO_AREA = F_AREA) %>%
+  distinct()
+
+# Rasterize FAO zones to match species raster grid
+cat("Rasterizing FAO zones...\n")
+fao_raster <- rasterize(fao_zones, r, field = "FAO_ID")
+
+# Extract FAO zone for each cell
+fao_values <- values(fao_raster)
+
+# Add to coords
+coords_with_fao <- coords_with_fishing %>%
+  mutate(FAO_ID = fao_values) %>%
+  left_join(fao_lookup, by = "FAO_ID")
+
+# --- Fix duplicate columns if they exist ---
+if ("FishingHours_Log.x" %in% names(coords_with_fao)) {
+  coords_with_fao <- coords_with_fao %>%
+    rename(
+      FishingHours = FishingHours.x,
+      FishingHours_Log = FishingHours_Log.x,
+      has_fishing_data = has_fishing_data.x
+    ) %>%
+    dplyr::select(-ends_with(".y"))
+}
+
+sf_use_s2(TRUE)
+
+cat("Cells assigned to FAO zones:", sum(!is.na(coords_with_fao$FAO_AREA)), 
+    "out of", nrow(coords_with_fao), "\n")
+
+# Verify fishing data is present
+fishing_log_vector <- coords_with_fao$FishingHours_Log
+cat("fishing_log_vector length:", length(fishing_log_vector), "\n")
+cat("fishing_log_vector range:", min(fishing_log_vector, na.rm = TRUE), "-", 
+    max(fishing_log_vector, na.rm = TRUE), "\n")
+
+cat("Cells assigned to FAO zones:", sum(!is.na(coords_with_fao$FAO_AREA)), 
+    "out of", nrow(coords_with_fao), "\n")
+
+fishing_log_vector <- coords_with_fao$FishingHours_Log
+
+# --- 3. Precompute FAO zone cell indices for efficient shuffling ---
+fao_cell_indices <- coords_with_fao %>%
+  filter(!is.na(FAO_AREA)) %>%
+  group_by(FAO_AREA) %>%
+  summarise(
+    cell_indices = list(which(coords_with_fao$FAO_AREA == first(FAO_AREA))),
+    .groups = "drop"
+  )
+
+# Create a lookup vector: for each cell, which FAO zone?
+cell_fao_lookup <- coords_with_fao$FAO_AREA
+
+# --- 4. Function to generate one shuffled fishing effort vector ---
+shuffle_fishing_within_fao <- function(fishing_vector, fao_vector) {
+  shuffled <- fishing_vector
+  unique_faos <- unique(fao_vector[!is.na(fao_vector)])
+  
+  for (fao in unique_faos) {
+    fao_indices <- which(fao_vector == fao)
+    shuffled[fao_indices] <- sample(fishing_vector[fao_indices])
+  }
+  
+  return(shuffled)
+}
+
+# --- 5. Function to calculate FEI for a species given a fishing vector ---
+calculate_FEI <- function(presence_cells, fishing_vector) {
+  mean(fishing_vector[presence_cells], na.rm = TRUE)
+}
+
+# --- 6. Calculate SFEI for all species ---
+cat("Calculating Standardized Fishing Exposure Index (SFEI)...\n")
+cat("Running 99 null iterations (shuffling fishing within FAO zones)...\n")
+
+n_iterations <- 99
+
+# Pre-generate all shuffled fishing vectors (more efficient)
+cat("Pre-generating shuffled fishing effort vectors...\n")
+fishing_log_vector <- coords_with_fao$FishingHours_Log
+
+shuffled_fishing_list <- replicate(
+  n_iterations,
+  shuffle_fishing_within_fao(fishing_log_vector, cell_fao_lookup),
+  simplify = FALSE
+)
+
+# Parallel processing setup
+plan(multisession, workers = parallel::detectCores() - 1)
+
+SFEI_results <- future_map_dfr(names(species_presence_list), function(sp_name) {
+  
+  presence_cells <- species_presence_list[[sp_name]]
+  
+  if (length(presence_cells) == 0) {
+    return(tibble(
+      Species = sp_name,
+      FEI_observed = NA,
+      FEI_null_mean = NA,
+      FEI_null_sd = NA,
+      SFEI = NA,
+      p_value = NA,
+      Exposure_Category = NA
+    ))
+  }
+  
+  # Observed FEI (using log-transformed fishing hours)
+  FEI_obs <- calculate_FEI(presence_cells, fishing_log_vector)
+  
+  # Null distribution: FEI under shuffled fishing effort
+  null_FEIs <- sapply(shuffled_fishing_list, function(shuffled_fishing) {
+    calculate_FEI(presence_cells, shuffled_fishing)
+  })
+  
+  null_mean <- mean(null_FEIs, na.rm = TRUE)
+  null_sd <- sd(null_FEIs, na.rm = TRUE)
+  
+  # Calculate SFEI (Z-score)
+  if (is.na(null_sd) || null_sd == 0) {
+    SFEI <- NA
+    p_value <- NA
+  } else {
+    SFEI <- (FEI_obs - null_mean) / null_sd
+    
+    # Two-tailed p-value
+    n_valid <- sum(!is.na(null_FEIs))
+    if (FEI_obs > null_mean) {
+      p_value <- (sum(null_FEIs >= FEI_obs, na.rm = TRUE) + 1) / (n_valid + 1)
+    } else {
+      p_value <- (sum(null_FEIs <= FEI_obs, na.rm = TRUE) + 1) / (n_valid + 1)
+    }
+  }
+  
+  # Categorize exposure (following GPT's suggestion)
+  exposure_cat <- case_when(
+    is.na(SFEI) ~ "Insufficient data",
+    SFEI > 1.96 ~ "Highly overexposed",
+    SFEI > 0 ~ "Moderately overexposed",
+    SFEI <= 0 ~ "Underexposed"
+  )
+  
+  tibble(
+    Species = sp_name,
+    FEI_observed = FEI_obs,
+    FEI_null_mean = null_mean,
+    FEI_null_sd = null_sd,
+    SFEI = SFEI,
+    p_value = p_value,
+    Exposure_Category = exposure_cat
+  )
+  
+}, .progress = TRUE, .options = furrr_options(seed = TRUE))
+
+plan(sequential)
+
+# --- 7. Merge with FEI results and conservation metrics ---
+# Remove any existing conservation columns to avoid duplicate joins
+SFEI_results <- SFEI_results %>%
+  dplyr::select(Species, FEI_observed, FEI_null_mean, FEI_null_sd, SFEI, p_value, Exposure_Category) %>%
+  left_join(
+    FEI_results %>% dplyr::select(Species, Range_Size, Fishing_Data_Coverage, IUCN, FUSE, EDGE2),
+    by = "Species"
+  )
+# --- 8. Summary statistics ---
+cat("\n=== SFEI SUMMARY STATISTICS ===\n")
+
+exposure_summary <- SFEI_results %>%
+  count(Exposure_Category) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))
+
+kable(exposure_summary,
+      format = "html",
+      col.names = c("Exposure Category", "N Species", "Percentage"),
+      caption = "Distribution of species by fishing exposure category") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+cat("\nSFEI distribution:\n")
+print(summary(SFEI_results$SFEI))
+
+# --- 9. Top highly overexposed species ---
+
+SFEI_highly_overexposed <- SFEI_results %>%
+  filter(Exposure_Category == "Highly overexposed") %>%
+  arrange(desc(SFEI)) %>%
+  dplyr::select(Species, IUCN, FUSE, EDGE2, SFEI, FEI_observed, p_value) %>%
+  head(20)
+
+# Save the SFEI highly overexposed species table
+sfei_overexposed_table <- kable(SFEI_highly_overexposed,
+      format = "html",
+      digits = c(0, 0, 0, 0, 2, 2, 4),
+      col.names = c("Species", "IUCN", "FUSE", "EDGE2", "SFEI", "FEI obs", "p-value"),
+      caption = "Top 20 highly overexposed species (SFEI > 1.96)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+save_kable(sfei_overexposed_table, 
+           file = here::here("R", "Outputs", "Table_top20_SFEI_overexposed_species.png"),
+           zoom = 2)
+
+cat("SFEI overexposed species table saved.\n")
+
+# --- 10. High-conflict species (threatened + highly overexposed) ---
+conflict_species <- SFEI_results %>%
+  filter(
+    Exposure_Category == "Highly overexposed",
+    IUCN >= 3  # VU, EN, or CR
+  ) %>%
+  arrange(desc(SFEI))
+
+cat("\n=== HIGH-CONFLICT SPECIES ===\n")
+cat("Threatened species (VU, EN, CR) that are highly overexposed:", 
+    nrow(conflict_species), "\n\n")
+
+conflict_table <- kable(conflict_species %>% 
+        dplyr::select(Species, IUCN, FUSE, EDGE2, SFEI, FEI_observed) %>%
+        head(20),
+      format = "html",
+      digits = 2,
+      col.names = c("Species", "IUCN", "FUSE", "EDGE2", "SFEI", "FEI obs"),
+      caption = "High-conflict species: threatened and highly overexposed to fishing") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+# Save as PNG
+save_kable(conflict_table, 
+           file = here::here("R", "Outputs", "Table_high_conflict_species.png"),
+           zoom = 2)  # zoom increases resolution
+
+# --- 11. Save SFEI results ---
+saveRDS(SFEI_results, here::here("R", "Data", "Species_SFEI_results.rds"))
+write_csv(SFEI_results, here::here("R", "Outputs", "Species_SFEI_results.csv"))
+
+cat("\nSFEI results saved.\n")
+```
+
+
+## Maps of FEI and SFEI
+```{r}
+#| label: fei-sfei-maps
+#| echo: true
+#| warning: false
+#| message: false
+#| fig-width: 10
+#| fig-height: 12
+
+#======================
+# SPATIAL MAPS OF FEI AND SFEI
+#======================
+
+# --- 1. Calculate cell-level metrics ---
+cat("Calculating cell-level FEI and SFEI metrics...\n")
+
+# Get species list for each category
+highly_overexposed_species <- SFEI_results %>%
+  filter(Exposure_Category == "Highly overexposed") %>%
+  pull(Species)
+
+high_conflict_species <- SFEI_results %>%
+  filter(Exposure_Category == "Highly overexposed", IUCN >= 3) %>%
+  pull(Species)
+
+cat("Highly overexposed species:", length(highly_overexposed_species), "\n")
+cat("High-conflict species:", length(high_conflict_species), "\n")
+
+# Create a data frame to store cell-level metrics
+cell_metrics <- data.frame(
+  PUID = 1:length(values(r)),
+  mean_FEI = NA_real_,
+  mean_SFEI = NA_real_,
+  richness_highly_overexposed = 0,
+  richness_high_conflict = 0
+)
+
+# For efficiency, create a matrix of species presence (species x cells)
+cat("Building species presence matrix...\n")
+
+# Get FEI and SFEI values as named vectors for fast lookup
+fei_values <- setNames(SFEI_results$FEI_observed, SFEI_results$Species)
+sfei_values <- setNames(SFEI_results$SFEI, SFEI_results$Species)
+
+# Initialize vectors for accumulating sums
+n_species_per_cell <- rep(0, nrow(cell_metrics))
+sum_fei_per_cell <- rep(0, nrow(cell_metrics))
+sum_sfei_per_cell <- rep(0, nrow(cell_metrics))
+richness_overexposed <- rep(0, nrow(cell_metrics))
+richness_conflict <- rep(0, nrow(cell_metrics))
+
+# Loop through species and accumulate metrics
+cat("Calculating metrics per cell (this may take a few minutes)...\n")
+
+for (sp_name in names(species_presence_list)) {
+  presence_cells <- species_presence_list[[sp_name]]
+  
+  if (length(presence_cells) == 0) next
+  
+  # Get FEI and SFEI for this species
+  sp_fei <- fei_values[sp_name]
+  sp_sfei <- sfei_values[sp_name]
+  
+  if (is.na(sp_fei) || is.na(sp_sfei)) next
+  
+  # Accumulate for mean calculations
+  n_species_per_cell[presence_cells] <- n_species_per_cell[presence_cells] + 1
+  sum_fei_per_cell[presence_cells] <- sum_fei_per_cell[presence_cells] + sp_fei
+  sum_sfei_per_cell[presence_cells] <- sum_sfei_per_cell[presence_cells] + sp_sfei
+  
+  # Count richness for subsets
+  if (sp_name %in% highly_overexposed_species) {
+    richness_overexposed[presence_cells] <- richness_overexposed[presence_cells] + 1
+  }
+  if (sp_name %in% high_conflict_species) {
+    richness_conflict[presence_cells] <- richness_conflict[presence_cells] + 1
+  }
+}
+
+# Calculate means
+cell_metrics$mean_FEI <- ifelse(n_species_per_cell > 0, 
+                                 sum_fei_per_cell / n_species_per_cell, 
+                                 NA)
+cell_metrics$mean_SFEI <- ifelse(n_species_per_cell > 0, 
+                                  sum_sfei_per_cell / n_species_per_cell, 
+                                  NA)
+cell_metrics$richness_highly_overexposed <- richness_overexposed
+cell_metrics$richness_high_conflict <- richness_conflict
+cell_metrics$species_richness <- n_species_per_cell
+
+# Add coordinates
+cell_metrics <- cell_metrics %>%
+  left_join(coords, by = "PUID")
+
+cat("Cell metrics calculated.\n")
+cat("Cells with species data:", sum(n_species_per_cell > 0), "\n")
+
+# --- 2. Prepare spatial data ---
+# Define projection
+mcbryde_thomas_2 <- "+proj=mbt_s"
+
+# Filter to cells with data and convert to sf
+cell_metrics_sf <- cell_metrics %>%
+  filter(!is.na(mean_FEI)) %>%
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326) %>%
+  st_transform(crs = mcbryde_thomas_2)
+
+# World map and globe border (reuse from earlier if available, or recreate)
+world <- ne_countries(scale = "medium", returnclass = "sf")
+world_projected <- st_transform(world, crs = mcbryde_thomas_2)
+
+globe_bbox <- rbind(c(-180, -90), c(-180, 90),
+                    c(180, 90), c(180, -90), c(-180, -90))
+globe_border <- st_polygon(list(globe_bbox)) %>%
+  st_sfc(crs = 4326) %>%
+  st_sf(data.frame(rgn = 'globe', geom = .)) %>%
+  smoothr::densify(max_distance = 0.5) %>%
+  st_transform(crs = mcbryde_thomas_2)
+
+# Base theme (matching bivariate maps)
+map_theme <- theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "horizontal",
+    legend.box = "vertical",
+    legend.margin = margin(t = 20, r = 0, b = 0, l = 0),
+    legend.title = element_text(margin = margin(b = 10)),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_text(size = 12, face = "bold", hjust = 0)
+  )
+
+# --- 3. Create the four maps ---
+
+# Map 1: Mean FEI per cell
+map_mean_fei <- ggplot() +
+  geom_sf(data = cell_metrics_sf, aes(color = mean_FEI), size = 0.5, alpha = 0.8) +
+  geom_sf(data = world_projected, fill = "lightgrey", color = "lightgrey", size = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "lightgrey", size = 0.5) +
+  scale_color_viridis_c(
+    option = "inferno",
+    name = "Mean FEI",
+    guide = guide_colorbar(barwidth = 20, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  labs(title = "(A) Mean Fishing Exposure Index (FEI)",
+       x = NULL, y = NULL) +
+  map_theme
+
+# Map 2: Mean SFEI per cell
+map_mean_sfei <- ggplot() +
+  geom_sf(data = cell_metrics_sf, aes(color = mean_SFEI), size = 0.5, alpha = 0.8) +
+  geom_sf(data = world_projected, fill = "lightgrey", color = "lightgrey", size = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "lightgrey", size = 0.5) +
+  scale_color_viridis_c(
+    option = "plasma",
+    name = "Mean SFEI",
+    guide = guide_colorbar(barwidth = 20, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  labs(title = "(B) Mean Standardized Fishing Exposure Index (SFEI)",
+       x = NULL, y = NULL) +
+  map_theme
+
+# Map 3: Richness of highly overexposed species
+# Filter to cells with at least one highly overexposed species
+cell_overexposed_sf <- cell_metrics_sf %>%
+  filter(richness_highly_overexposed > 0)
+
+map_richness_overexposed <- ggplot() +
+  geom_sf(data = cell_overexposed_sf, aes(color = richness_highly_overexposed), 
+          size = 0.5, alpha = 0.8) +
+  geom_sf(data = world_projected, fill = "lightgrey", color = "lightgrey", size = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "lightgrey", size = 0.5) +
+  scale_color_viridis_c(
+    option = "rocket",
+    direction = -1,
+    name = "Species richness",
+    guide = guide_colorbar(barwidth = 20, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  labs(title = "(C) Richness of highly overexposed species (SFEI > 1.96)",
+       x = NULL, y = NULL) +
+  map_theme
+
+# Map 4: Richness of high-conflict species
+# Filter to cells with at least one high-conflict species
+cell_conflict_sf <- cell_metrics_sf %>%
+  filter(richness_high_conflict > 0)
+
+map_richness_conflict <- ggplot() +
+  geom_sf(data = cell_conflict_sf, aes(color = richness_high_conflict), 
+          size = 0.5, alpha = 0.8) +
+  geom_sf(data = world_projected, fill = "lightgrey", color = "lightgrey", size = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "lightgrey", size = 0.5) +
+  scale_color_gradientn(
+    colors = c("#FEE5D9", "#FCAE91", "#FB6A4A", "#DE2D26", "#A50F15"),
+    name = "Species richness",
+    guide = guide_colorbar(barwidth = 20, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  labs(title = "(D) Richness of high-conflict species (SFEI > 1.96 & IUCN ≥ VU)",
+       x = NULL, y = NULL) +
+  map_theme
+
+# --- 4. Combine into 2x2 grid ---
+combined_maps <- (map_mean_fei | map_mean_sfei) / 
+                 (map_richness_overexposed | map_richness_conflict)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_FEI_SFEI_maps_combined.png"),
+  combined_maps,
+  width = 14, height = 10, dpi = 300, bg = "white"
+)
+
+# --- 5. Also save individual maps ---
+ggsave(here::here("R", "Outputs", "Map_mean_FEI.png"),
+       map_mean_fei, width = 10, height = 6, dpi = 300, bg = "white")
+
+ggsave(here::here("R", "Outputs", "Map_mean_SFEI.png"),
+       map_mean_sfei, width = 10, height = 6, dpi = 300, bg = "white")
+
+ggsave(here::here("R", "Outputs", "Map_richness_highly_overexposed.png"),
+       map_richness_overexposed, width = 10, height = 6, dpi = 300, bg = "white")
+
+ggsave(here::here("R", "Outputs", "Map_richness_high_conflict.png"),
+       map_richness_conflict, width = 10, height = 6, dpi = 300, bg = "white")
+
+cat("\nAll maps saved.\n")
+
+# --- 6. Summary statistics for maps ---
+cat("\n=== SPATIAL SUMMARY STATISTICS ===\n\n")
+
+cat("Mean FEI across cells:\n")
+print(summary(cell_metrics$mean_FEI))
+
+cat("\nMean SFEI across cells:\n")
+print(summary(cell_metrics$mean_SFEI))
+
+cat("\nHighly overexposed species richness per cell:\n")
+print(summary(cell_metrics$richness_highly_overexposed[cell_metrics$richness_highly_overexposed > 0]))
+
+cat("\nHigh-conflict species richness per cell:\n")
+print(summary(cell_metrics$richness_high_conflict[cell_metrics$richness_high_conflict > 0]))
+
+cat("\nCells with at least one highly overexposed species:", 
+    sum(cell_metrics$richness_highly_overexposed > 0), "\n")
+cat("Cells with at least one high-conflict species:", 
+    sum(cell_metrics$richness_high_conflict > 0), "\n")
+
+# --- 7. Save cell metrics for further analysis ---
+saveRDS(cell_metrics, here::here("R", "Data", "Cell_FEI_SFEI_metrics.rds"))
+write_csv(cell_metrics, here::here("R", "Outputs", "Cell_FEI_SFEI_metrics.csv"))
+
+cat("\nCell-level metrics saved.\n")
+
+```
+
+## Comparison FEI: Mean vs Tercile Approach 
+
+```{r}
+# =============================================================================
+# Comparison FEI: Mean vs Tercile Approach (Albouy et al. 2020)
+# =============================================================================
+
+library(tidyverse)
+library(here)
+
+# -----------------------------------------------------------------------------
+# 1. Calculate global terciles of log(fishing hours)
+# -----------------------------------------------------------------------------
+
+# Extract all fishing values per cell (log-transformed)
+all_fishing_values <- aggregated_data %>%
+  filter(predicted_fishing_hours > 0) %>%
+  mutate(log_fishing = log(predicted_fishing_hours + 1))
+
+# Global terciles
+terciles <- quantile(all_fishing_values$log_fishing, probs = c(1/3, 2/3), na.rm = TRUE)
+cat("Global terciles of log(fishing hours):\n")
+cat("T1 (Low/Medium boundary):", terciles[1], "\n")
+cat("T2 (Medium/High boundary):", terciles[2], "\n")
+
+# Categorize each cell
+all_fishing_values <- all_fishing_values %>%
+  mutate(
+    fishing_category = case_when(
+      log_fishing <= terciles[1] ~ "Low",
+      log_fishing <= terciles[2] ~ "Medium",
+      TRUE ~ "High"
+    ),
+    fishing_score = case_when(
+      log_fishing <= terciles[1] ~ 0,
+      log_fishing <= terciles[2] ~ 1,
+      TRUE ~ 2
+    )
+  )
+
+# Check distribution
+table(all_fishing_values$fishing_category)
+
+# -----------------------------------------------------------------------------
+# 2. Calculate FEI "terciles" for each species
+# -----------------------------------------------------------------------------
+
+# Create lookup cell -> fishing category
+cell_fishing_category <- cell_metrics %>%
+  dplyr::select(PUID, Longitude, Latitude) %>%
+  left_join(
+    all_fishing_values %>% 
+      dplyr::select(lon_05deg, lat_05deg, log_fishing, fishing_score),
+    by = c("Longitude" = "lon_05deg", "Latitude" = "lat_05deg")
+  )
+
+# Calculate FEI_terciles for each species
+FEI_terciles <- bind_rows(
+  lapply(names(species_presence_list), function(sp) {
+    cells <- species_presence_list[[sp]]
+    
+    # Get fishing scores for these cells
+    sp_fishing <- cell_fishing_category %>%
+      filter(PUID %in% cells) %>%
+      filter(!is.na(fishing_score))
+    
+    if(nrow(sp_fishing) == 0) return(NULL)
+    
+    # Calculate proportions in each category
+    n_total <- nrow(sp_fishing)
+    a <- sum(sp_fishing$fishing_score == 0) / n_total  # proportion Low
+    b <- sum(sp_fishing$fishing_score == 1) / n_total  # proportion Medium
+    c <- sum(sp_fishing$fishing_score == 2) / n_total  # proportion High
+    
+    # FEI following Albouy et al.
+    FEI_terc <- a * 0 + b * 1 + c * 2
+    
+    data.frame(
+      Species = sp,
+      prop_Low = a,
+      prop_Medium = b,
+      prop_High = c,
+      FEI_terciles = FEI_terc,
+      n_cells = n_total
+    )
+  })
+)
+
+# -----------------------------------------------------------------------------
+# 3. Compare with original FEI (mean)
+# -----------------------------------------------------------------------------
+
+comparison <- FEI_terciles %>%
+  left_join(
+    FEI_results %>% dplyr::select(Species, FEI_log, Range_Size),
+    by = "Species"
+  ) %>%
+  rename(FEI_mean = FEI_log)
+
+# Correlation
+cor_test <- cor.test(comparison$FEI_mean, comparison$FEI_terciles, method = "spearman")
+cat("\n=== Correlation between both approaches ===\n")
+cat("Spearman rho:", cor_test$estimate, "\n")
+cat("p-value:", cor_test$p.value, "\n")
+
+# Summaries
+cat("\n=== Summary FEI mean (original approach) ===\n")
+print(summary(comparison$FEI_mean))
+
+cat("\n=== Summary FEI terciles (Albouy approach) ===\n")
+print(summary(comparison$FEI_terciles))
+
+# -----------------------------------------------------------------------------
+# 4. Visualization
+# -----------------------------------------------------------------------------
+
+# Scatter plot comparison
+p_comparison <- ggplot(comparison, aes(x = FEI_mean, y = FEI_terciles)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(
+    x = "FEI (mean log fishing hours)",
+    y = "FEI (tercile proportions, Albouy et al.)",
+    title = "Comparison of FEI calculation approaches",
+    subtitle = paste0("Spearman ρ = ", round(cor_test$estimate, 3))
+  ) +
+  theme_minimal()
+
+print(p_comparison)
+
+# Does ranking change?
+comparison <- comparison %>%
+  mutate(
+    rank_mean = rank(-FEI_mean),
+    rank_terciles = rank(-FEI_terciles),
+    rank_diff = abs(rank_mean - rank_terciles)
+  )
+
+cat("\n=== Ranking changes ===\n")
+cat("Rank correlation:", cor(comparison$rank_mean, comparison$rank_terciles, method = "spearman"), "\n")
+cat("Mean rank difference:", mean(comparison$rank_diff), "\n")
+cat("Max rank difference:", max(comparison$rank_diff), "\n")
+
+# Top 10 with each method
+cat("\n=== Top 10 FEI mean ===\n")
+print(comparison %>% arrange(desc(FEI_mean)) %>% dplyr::select(Species, FEI_mean, FEI_terciles) %>% head(10))
+
+cat("\n=== Top 10 FEI terciles ===\n")
+print(comparison %>% arrange(desc(FEI_terciles)) %>% dplyr::select(Species, FEI_mean, FEI_terciles) %>% head(10))
+
+# =============================================================================
+# Map Mean FEI (tercile approach) per grid cell
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Calculate mean FEI_terciles per cell
+# -----------------------------------------------------------------------------
+
+# First, join species FEI_terciles to presence data
+cell_FEI_terciles <- bind_rows(
+  lapply(names(species_presence_list), function(sp) {
+    cells <- species_presence_list[[sp]]
+    fei_terc <- FEI_terciles %>% filter(Species == sp) %>% pull(FEI_terciles)
+    
+    if(length(fei_terc) == 0 || is.na(fei_terc)) return(NULL)
+    
+    data.frame(
+      PUID = cells,
+      Species = sp,
+      FEI_terciles = fei_terc
+    )
+  })
+) %>%
+  # Join coordinates
+  left_join(
+    cell_metrics %>% dplyr::select(PUID, Longitude, Latitude),
+    by = "PUID"
+  ) %>%
+  # Calculate mean per cell
+  group_by(PUID, Longitude, Latitude) %>%
+  summarise(
+    mean_FEI_terciles = mean(FEI_terciles, na.rm = TRUE),
+    n_species = n(),
+    .groups = "drop"
+  )
+
+cat("=== Summary of mean FEI (terciles) per cell ===\n")
+print(summary(cell_FEI_terciles$mean_FEI_terciles))
+
+# -----------------------------------------------------------------------------
+# 2. Compare with mean FEI (original approach) per cell
+# -----------------------------------------------------------------------------
+
+# Join both approaches
+cell_comparison <- cell_FEI_terciles %>%
+  left_join(
+    cell_metrics %>% dplyr::select(PUID, mean_FEI),
+    by = "PUID"
+  )
+
+# Correlation at cell level
+cor_cell <- cor.test(cell_comparison$mean_FEI, cell_comparison$mean_FEI_terciles, 
+                     method = "spearman", use = "complete.obs")
+cat("\n=== Cell-level correlation between approaches ===\n")
+cat("Spearman rho:", cor_cell$estimate, "\n")
+
+# -----------------------------------------------------------------------------
+# 3. Create maps
+# -----------------------------------------------------------------------------
+
+library(patchwork)
+
+# Map FEI mean (original)
+p_map_fei_mean <- ggplot() +
+  geom_tile(data = cell_comparison, 
+            aes(x = Longitude, y = Latitude, fill = mean_FEI)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "inferno", name = "Mean FEI") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(A) Mean FEI - Original approach (mean log fishing hours)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Map FEI terciles (Albouy approach)
+p_map_fei_terciles <- ggplot() +
+  geom_tile(data = cell_comparison, 
+            aes(x = Longitude, y = Latitude, fill = mean_FEI_terciles)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "inferno", name = "Mean FEI", limits = c(0, 2)) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(B) Mean FEI - Tercile approach (Albouy et al. 2020)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Combine maps
+p_fei_comparison <- p_map_fei_mean / p_map_fei_terciles
+
+print(p_fei_comparison)
+
+ggsave(here("R", "Outputs", "Fig_FEI_comparison_mean_vs_terciles.png"), 
+       p_fei_comparison, width = 12, height = 10, dpi = 300)
+
+# -----------------------------------------------------------------------------
+# 4. Scatter plot of cell-level comparison
+# -----------------------------------------------------------------------------
+
+p_cell_scatter <- ggplot(cell_comparison, aes(x = mean_FEI, y = mean_FEI_terciles)) +
+  geom_point(alpha = 0.3, size = 0.5) +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(
+    x = "Mean FEI (original: mean log fishing hours)",
+    y = "Mean FEI (tercile approach)",
+    title = "Cell-level comparison of FEI approaches",
+    subtitle = paste0("Spearman ρ = ", round(cor_cell$estimate, 3))
+  ) +
+  theme_minimal()
+
+print(p_cell_scatter)
+
+ggsave(here("R", "Outputs", "Fig_FEI_cell_comparison_scatter.png"), 
+       p_cell_scatter, width = 8, height = 6, dpi = 300)
+```
+
+## Ecoregion breakdown of FEI and SFEI
+
+```{r}
+#| label: fei-sfei-ecoregion-analysis
+#| echo: true
+#| warning: false
+#| message: false
+#| fig-width: 12
+#| fig-height: 8
+
+#======================
+# FEI AND SFEI BREAKDOWN BY ECOREGION
+#======================
+
+# --- 0. Filter to continental waters only ---
+cat("Filtering to continental waters...\n")
+
+# Create high seas template raster using terra
+template_raster <- rast(ext(High_seas), resolution = 0.5)
+highseas_raster <- rasterize(vect(High_seas), template_raster, field = 1, background = 0)
+
+# Convert cell_metrics to terra SpatVector for extraction
+cell_points <- vect(as.data.frame(cell_metrics),
+                    geom = c("Longitude", "Latitude"),
+                    crs = crs(highseas_raster))
+
+# Extract values from highseas raster
+highseas_values <- terra::extract(highseas_raster, cell_points)
+
+# Add highseas classification back to the dataframe
+cell_metrics$is_highseas <- highseas_values[, 2]
+cell_metrics$is_highseas[is.na(cell_metrics$is_highseas)] <- 0
+
+# Filter to keep only continental waters
+cell_metrics_continental <- cell_metrics %>%
+  filter(is_highseas == 0, !is.na(mean_FEI))
+
+cat("Continental cells:", nrow(cell_metrics_continental), 
+    "out of", nrow(cell_metrics), "\n")
+
+# --- 1. Intersect with ecoregions (not join) ---
+cat("Intersecting with ecoregions...\n")
+
+grid_sf <- cell_metrics_continental %>%
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326)
+
+meow_ecos <- st_transform(meow_ecos, st_crs(grid_sf))
+meow_ecos <- st_make_valid(meow_ecos)
+sf_use_s2(FALSE)
+
+# st_intersection keeps only cells INSIDE ecoregion polygons
+grid_ecoregions <- st_intersection(grid_sf, meow_ecos)
+
+sf_use_s2(TRUE)
+cat("Cells within ecoregions:", nrow(grid_ecoregions), "\n")
+
+# --- 2. Calculate ecoregion-level statistics ---
+ecoregion_stats <- grid_ecoregions %>%
+  st_drop_geometry() %>%
+  filter(!is.na(ECOREGION)) %>%
+  group_by(ECOREGION) %>%
+  summarise(
+    PROVINCE = first(PROVINCE),
+    REALM = first(REALM),
+    mean_FEI = mean(mean_FEI, na.rm = TRUE),
+    sd_FEI = sd(mean_FEI, na.rm = TRUE),
+    mean_SFEI = mean(mean_SFEI, na.rm = TRUE),
+    sd_SFEI = sd(mean_SFEI, na.rm = TRUE),
+    mean_richness_overexposed = mean(richness_highly_overexposed, na.rm = TRUE),
+    sd_richness_overexposed = sd(richness_highly_overexposed, na.rm = TRUE),
+    mean_richness_conflict = mean(richness_high_conflict, na.rm = TRUE),
+    sd_richness_conflict = sd(richness_high_conflict, na.rm = TRUE),
+    n_cells = n(),
+    .groups = "drop"
+  )
+
+# --- 3. Join stats back to simplified ecoregion polygons ---
+meow_ecos_simple <- meow_ecos %>%
+  dplyr::select(ECOREGION, geometry)
+
+meow_ecos_stats <- meow_ecos_simple %>%
+  left_join(ecoregion_stats, by = "ECOREGION")
+
+cat("Ecoregions with data:", sum(!is.na(meow_ecos_stats$mean_FEI)), "\n")
+
+# Get world map
+land <- ne_countries(scale = "medium", returnclass = "sf")
+
+# --- Clip MEOW ecoregions to remove high seas ---
+cat("Clipping ecoregions to continental waters...\n")
+
+sf_use_s2(FALSE)
+
+# Fix geometries with buffer(0) trick
+meow_ecos_fixed <- meow_ecos %>%
+  st_make_valid() %>%
+  st_buffer(0)
+
+High_seas_proj <- st_transform(High_seas, st_crs(meow_ecos_fixed))
+High_seas_fixed <- High_seas_proj %>%
+  st_make_valid() %>%
+  st_buffer(0)
+
+High_seas_union <- st_union(High_seas_fixed)
+
+# Remove high seas from ecoregion polygons
+meow_ecos_clipped <- st_difference(meow_ecos_fixed, High_seas_union)
+
+sf_use_s2(TRUE)
+
+cat("Clipped ecoregions created.\n")
+
+# --- Join stats to clipped ecoregions ---
+meow_ecos_clipped_simple <- meow_ecos_clipped %>%
+  dplyr::select(ECOREGION, geometry)
+
+meow_ecos_stats <- meow_ecos_clipped_simple %>%
+  left_join(ecoregion_stats, by = "ECOREGION")
+#======================
+# 4. ECOREGION CHOROPLETH MAPS
+#======================
+
+cat("Creating ecoregion maps...\n")
+
+# Map theme
+eco_map_theme <- theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "horizontal",
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_text(size = 11, face = "bold", hjust = 0)
+  )
+
+# Map A: Mean FEI by ecoregion
+map_eco_fei <- ggplot() +
+  geom_sf(data = meow_ecos_stats, aes(fill = mean_FEI), color = NA) +
+  geom_sf(data = land, fill = "darkgrey", color = "darkgrey", size = 0.1) +
+  scale_fill_viridis_c(
+    option = "inferno",
+    name = "Mean FEI",
+    na.value = "grey90",
+    guide = guide_colorbar(barwidth = 15, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(A) Mean FEI by ecoregion", x = NULL, y = NULL) +
+  eco_map_theme
+
+# Map B: Mean SFEI by ecoregion
+map_eco_sfei <- ggplot() +
+  geom_sf(data = meow_ecos_stats, aes(fill = mean_SFEI), color = NA) +
+  geom_sf(data = land, fill = "darkgrey", color = "darkgrey", size = 0.1) +
+  scale_fill_viridis_c(
+    option = "plasma",
+    name = "Mean SFEI",
+    na.value = "grey90",
+    guide = guide_colorbar(barwidth = 15, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(B) Mean SFEI by ecoregion", x = NULL, y = NULL) +
+  eco_map_theme
+
+# Map C: Mean richness of highly overexposed species
+map_eco_overexposed <- ggplot() +
+  geom_sf(data = meow_ecos_stats, aes(fill = mean_richness_overexposed), color = NA) +
+  geom_sf(data = land, fill = "darkgrey", color = "darkgrey", size = 0.1) +
+  scale_fill_viridis_c(
+    option = "rocket",
+    direction = -1,
+    name = "Mean richness",
+    na.value = "grey90",
+    guide = guide_colorbar(barwidth = 15, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(C) Mean richness of highly overexposed species by ecoregion", x = NULL, y = NULL) +
+  eco_map_theme
+
+# Map D: Mean richness of high-conflict species
+map_eco_conflict <- ggplot() +
+  geom_sf(data = meow_ecos_stats, aes(fill = mean_richness_conflict), color = NA) +
+  geom_sf(data = land, fill = "darkgrey", color = "darkgrey", size = 0.1) +
+  scale_fill_gradientn(
+    colors = c("#FEE5D9", "#FCAE91", "#FB6A4A", "#DE2D26", "#A50F15"),
+    name = "Mean richness",
+    na.value = "grey90",
+    guide = guide_colorbar(barwidth = 15, barheight = 0.5,
+                           title.position = "top", title.hjust = 0.5)
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(D) Mean richness of high-conflict species by ecoregion", x = NULL, y = NULL) +
+  eco_map_theme
+
+# Combine maps
+combined_eco_maps <- (map_eco_fei | map_eco_sfei) / 
+                     (map_eco_overexposed | map_eco_conflict)
+
+print(combined_eco_maps)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_FEI_SFEI_ecoregion_maps.png"),
+  combined_eco_maps,
+  width = 14, height = 10, dpi = 300, bg = "white"
+)
+#======================
+# 5. TOP 20 ECOREGION BARPLOTS
+#======================
+
+cat("Creating top 20 ecoregion barplots...\n")
+
+# Top 20 by Mean FEI
+top20_fei <- ecoregion_stats %>%
+  arrange(desc(mean_FEI)) %>%
+  head(20)
+
+bar_top_fei <- ggplot(top20_fei, aes(x = reorder(ECOREGION, mean_FEI), y = mean_FEI)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "(A) Top 20 ecoregions by mean FEI", x = NULL, y = "Mean FEI") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Top 20 by Mean SFEI
+top20_sfei <- ecoregion_stats %>%
+  arrange(desc(mean_SFEI)) %>%
+  head(20)
+
+bar_top_sfei <- ggplot(top20_sfei, aes(x = reorder(ECOREGION, mean_SFEI), y = mean_SFEI)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "(B) Top 20 ecoregions by mean SFEI", x = NULL, y = "Mean SFEI") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Top 20 by richness of highly overexposed species
+top20_overexposed <- ecoregion_stats %>%
+  arrange(desc(mean_richness_overexposed)) %>%
+  head(20)
+
+bar_top_overexposed <- ggplot(top20_overexposed, 
+                               aes(x = reorder(ECOREGION, mean_richness_overexposed), 
+                                   y = mean_richness_overexposed)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "(C) Top 20 ecoregions by highly overexposed species richness", 
+       x = NULL, y = "Mean richness") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Top 20 by richness of high-conflict species
+top20_conflict <- ecoregion_stats %>%
+  arrange(desc(mean_richness_conflict)) %>%
+  head(20)
+
+bar_top_conflict <- ggplot(top20_conflict, 
+                            aes(x = reorder(ECOREGION, mean_richness_conflict), 
+                                y = mean_richness_conflict)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "(D) Top 20 ecoregions by high-conflict species richness", 
+       x = NULL, y = "Mean richness") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Combine top 20 barplots
+combined_top20 <- (bar_top_fei | bar_top_sfei) / 
+                  (bar_top_overexposed | bar_top_conflict)
+
+print(combined_top20)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_top20_ecoregions_FEI_SFEI.png"),
+  combined_top20,
+  width = 16, height = 12, dpi = 300, bg = "white"
+)
+
+#======================
+# 6. BOTTOM 20 ECOREGION BARPLOTS
+#======================
+
+cat("Creating bottom 20 ecoregion barplots...\n")
+
+# Bottom 20 by Mean FEI
+bottom20_fei <- ecoregion_stats %>%
+  arrange(mean_FEI) %>%
+  head(20)
+
+bar_bottom_fei <- ggplot(bottom20_fei, aes(x = reorder(ECOREGION, mean_FEI), y = mean_FEI)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "(A) Bottom 20 ecoregions by mean FEI", x = NULL, y = "Mean FEI") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Bottom 20 by Mean SFEI
+bottom20_sfei <- ecoregion_stats %>%
+  arrange(mean_SFEI) %>%
+  head(20)
+
+bar_bottom_sfei <- ggplot(bottom20_sfei, aes(x = reorder(ECOREGION, mean_SFEI), y = mean_SFEI)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "(B) Bottom 20 ecoregions by mean SFEI", x = NULL, y = "Mean SFEI") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Bottom 20 by richness of highly overexposed species
+bottom20_overexposed <- ecoregion_stats %>%
+  arrange(mean_richness_overexposed) %>%
+  head(20)
+
+bar_bottom_overexposed <- ggplot(bottom20_overexposed, 
+                                  aes(x = reorder(ECOREGION, mean_richness_overexposed), 
+                                      y = mean_richness_overexposed)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "(C) Bottom 20 ecoregions by highly overexposed species richness", 
+       x = NULL, y = "Mean richness") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Bottom 20 by richness of high-conflict species
+bottom20_conflict <- ecoregion_stats %>%
+  arrange(mean_richness_conflict) %>%
+  head(20)
+
+bar_bottom_conflict <- ggplot(bottom20_conflict, 
+                               aes(x = reorder(ECOREGION, mean_richness_conflict), 
+                                   y = mean_richness_conflict)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "(D) Bottom 20 ecoregions by high-conflict species richness", 
+       x = NULL, y = "Mean richness") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+# Combine bottom 20 barplots
+combined_bottom20 <- (bar_bottom_fei | bar_bottom_sfei) / 
+                     (bar_bottom_overexposed | bar_bottom_conflict)
+
+print(combined_bottom20)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_bottom20_ecoregions_FEI_SFEI.png"),
+  combined_bottom20,
+  width = 16, height = 12, dpi = 300, bg = "white"
+)
+
+#======================
+# 7. SAVE ECOREGION STATISTICS
+#======================
+
+cat("\n=== TOP 10 ECOREGIONS BY METRIC ===\n")
+
+cat("\nTop 10 by Mean FEI:\n")
+print(head(ecoregion_stats %>% arrange(desc(mean_FEI)) %>% 
+             select(ECOREGION, REALM, mean_FEI, sd_FEI), 10))
+
+cat("\nTop 10 by Mean SFEI:\n")
+print(head(ecoregion_stats %>% arrange(desc(mean_SFEI)) %>% 
+             select(ECOREGION, REALM, mean_SFEI, sd_SFEI), 10))
+
+cat("\nTop 10 by Highly Overexposed Richness:\n")
+print(head(ecoregion_stats %>% arrange(desc(mean_richness_overexposed)) %>% 
+             select(ECOREGION, REALM, mean_richness_overexposed), 10))
+
+cat("\nTop 10 by High-Conflict Richness:\n")
+print(head(ecoregion_stats %>% arrange(desc(mean_richness_conflict)) %>% 
+             select(ECOREGION, REALM, mean_richness_conflict), 10))
+
+# Save statistics
+write_csv(ecoregion_stats, here::here("R", "Outputs", "Ecoregion_FEI_SFEI_stats.csv"))
+
+cat("\nEcoregion statistics saved.\n")
+```
+
+
+## Barplots of FEI and SFEI 
+```{r}
+#| label: fei-sfei-species-histograms
+#| echo: true
+#| warning: false
+#| message: false
+#| fig-width: 14
+#| fig-height: 6
+
+#======================
+# SPECIES-LEVEL FEI AND SFEI BAR PLOTS
+#======================
+
+# Prepare data
+plot_data <- SFEI_results %>%
+  filter(!is.na(SFEI), !is.na(IUCN), !is.na(FEI_observed))
+
+# Define IUCN labels and colors
+iucn_labels <- c("1" = "LC", "2" = "NT", "3" = "VU", "4" = "EN", "5" = "CR")
+iucn_colors <- c(
+  "LC" = "#38AB38",
+  "NT" = "#58AFFF", 
+  "VU" = "#FEC748",
+  "EN" = "#FC7F3F",
+  "CR" = "#D81E05"
+)
+
+plot_data <- plot_data %>%
+  mutate(IUCN_label = factor(iucn_labels[as.character(IUCN)], 
+                              levels = c("LC", "NT", "VU", "EN", "CR")))
+
+# --- 1. FEI bar plot (species ordered by increasing FEI) ---
+fei_bar_data <- plot_data %>%
+  arrange(FEI_observed) %>%
+  mutate(species_order = row_number())
+
+fei_barplot <- ggplot(fei_bar_data, aes(x = species_order, y = FEI_observed, fill = IUCN_label)) +
+  geom_bar(stat = "identity", width = 1) +
+  scale_fill_manual(values = iucn_colors, name = "IUCN Status") +
+  labs(
+    title = "Fishing Exposure Index (FEI)",
+    x = "Species",
+    y = "FEI (log fishing hours)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
+# --- 1. FEI bar plot (species ordered by increasing FEI) ---
+fei_bar_data <- plot_data %>%
+  arrange(FEI_observed) %>%
+  mutate(species_order = row_number())
+
+# Get x-axis range for rectangles
+n_species <- nrow(fei_bar_data)
+
+# Calculate n and % per FEI category
+n_low <- sum(fei_bar_data$FEI_observed <= 4)
+n_moderate <- sum(fei_bar_data$FEI_observed > 4 & fei_bar_data$FEI_observed <= 5.5)
+n_high <- sum(fei_bar_data$FEI_observed > 5.5 & fei_bar_data$FEI_observed <= 7)
+n_veryhigh <- sum(fei_bar_data$FEI_observed > 7)
+
+pct_low <- round(100 * n_low / n_species, 1)
+pct_moderate <- round(100 * n_moderate / n_species, 1)
+pct_high <- round(100 * n_high / n_species, 1)
+pct_veryhigh <- round(100 * n_veryhigh / n_species, 1)
+
+fei_barplot <- ggplot(fei_bar_data, aes(x = species_order, y = FEI_observed, fill = IUCN_label)) +
+  # Background panels for FEI categories
+  annotate("rect", xmin = 0.5, xmax = n_species + 0.5, ymin = 0, ymax = 4, 
+           fill = "#77dd77", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species + 0.5, ymin = 4, ymax = 5.5, 
+           fill = "#fdfd96", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species + 0.5, ymin = 5.5, ymax = 7, 
+           fill = "#ffb347", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species + 0.5, ymin = 7, ymax = 12, 
+           fill = "#ff6961", alpha = 0.5) +
+  # Bars
+  geom_bar(stat = "identity", width = 1) +
+  scale_fill_manual(values = iucn_colors, name = "IUCN Status") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    title = "Fishing Exposure Index (FEI)",
+    x = "Species",
+    y = "FEI (log fishing hours)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  ) +
+  # Category labels with n and %
+  annotate("text", x = 15, y = 2, 
+           label = paste0("Low (n=", n_low, ", ", pct_low, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = 4.75, 
+           label = paste0("Moderate (n=", n_moderate, ", ", pct_moderate, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = 6.25, 
+           label = paste0("High (n=", n_high, ", ", pct_high, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = 9, 
+           label = paste0("Very high (n=", n_veryhigh, ", ", pct_veryhigh, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20")
+
+# --- 2. SFEI bar plot (species ordered by increasing SFEI) ---
+sfei_bar_data <- plot_data %>%
+  arrange(SFEI) %>%
+  mutate(species_order = row_number())
+
+# Get range
+n_species_sfei <- nrow(sfei_bar_data)
+max_sfei <- max(sfei_bar_data$SFEI, na.rm = TRUE)
+min_sfei <- min(sfei_bar_data$SFEI, na.rm = TRUE)
+
+# Calculate n and % per SFEI category
+n_underexposed <- sum(sfei_bar_data$SFEI <= 0)
+n_moderate_over <- sum(sfei_bar_data$SFEI > 0 & sfei_bar_data$SFEI <= 1.96)
+n_highly_over <- sum(sfei_bar_data$SFEI > 1.96)
+
+pct_underexposed <- round(100 * n_underexposed / n_species_sfei, 1)
+pct_moderate_over <- round(100 * n_moderate_over / n_species_sfei, 1)
+pct_highly_over <- round(100 * n_highly_over / n_species_sfei, 1)
+
+sfei_barplot <- ggplot(sfei_bar_data, aes(x = species_order, y = SFEI, fill = IUCN_label)) +
+  # Background panels for SFEI categories
+  annotate("rect", xmin = 0.5, xmax = n_species_sfei + 0.5, ymin = min_sfei - 1, ymax = 0, 
+           fill = "#77dd77", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species_sfei + 0.5, ymin = 0, ymax = 1.96, 
+           fill = "#fdfd96", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = n_species_sfei + 0.5, ymin = 1.96, ymax = max_sfei + 5, 
+           fill = "#ff6961", alpha = 0.5) +
+  # Reference lines
+  geom_hline(yintercept = 1.96, linetype = "dashed", color = "black", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "grey50", linewidth = 0.3) +
+  # Bars
+  geom_bar(stat = "identity", width = 1) +
+  scale_fill_manual(values = iucn_colors, name = "IUCN Status") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    title = "Standardized Fishing Exposure Index (SFEI)",
+    x = "Species",
+    y = "SFEI (Z-score)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  ) +
+  # Category labels with n and %
+  annotate("text", x = 15, y = min_sfei / 2, 
+           label = paste0("Underexposed (n=", n_underexposed, ", ", pct_underexposed, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = 6, 
+           label = paste0("Moderately overexposed (n=", n_moderate_over, ", ", pct_moderate_over, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20") +
+  annotate("text", x = 15, y = max_sfei * 0.7, 
+           label = paste0("Highly overexposed (n=", n_highly_over, ", ", pct_highly_over, "%)"), 
+           hjust = 0, size = 3.5, fontface = "italic", color = "grey20")
+
+# --- 3. Combine plots ---
+combined_barplots <- ggpubr::ggarrange(
+  fei_barplot, sfei_barplot,
+  ncol = 2, nrow = 1,
+  common.legend = TRUE,
+  legend = "bottom",
+  labels = c("(A)", "(B)"),
+  font.label = list(size = 14, face = "bold")
+)
+
+print(combined_barplots)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_FEI_SFEI_species_barplots.png"),
+  combined_barplots,
+  width = 14, height = 6, dpi = 300, bg = "white"
+)
+
+cat("Species barplots saved.\n")
+```
+
+## FEI and SFEI accross IUCN status
+```{r}
+#| label: fei-sfei-iucn-analysis
+#| echo: true
+#| warning: false
+#| message: false
+#| fig-width: 14
+#| fig-height: 6
+
+#======================
+# FISHING EXPOSURE VS IUCN THREAT STATUS ANALYSIS
+#======================
+
+library(DescTools)
+library(moments)
+library(quantreg)
+
+# Prepare data
+fei_iucn_data <- SFEI_results %>%
+  filter(!is.na(SFEI), !is.na(IUCN), !is.na(FEI_observed)) %>%
+  mutate(
+    IUCN_status = case_when(
+      IUCN == 1 ~ "LC",
+      IUCN == 2 ~ "NT",
+      IUCN == 3 ~ "VU",
+      IUCN == 4 ~ "EN",
+      IUCN == 5 ~ "CR",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
+  filter(IUCN_status != "Unknown")
+
+# Define IUCN colors and order
+iucn_colors <- c(
+  "LC" = "#38AB38",
+  "NT" = "#58AFFF",
+  "VU" = "#FEC748",
+  "EN" = "#FC7F3F",
+  "CR" = "#D81E05"
+)
+iucn_order <- c("LC", "NT", "VU", "EN", "CR")
+
+#======================
+# 1. SUMMARY STATISTICS
+#======================
+
+cat("=== FEI SUMMARY STATISTICS BY IUCN STATUS ===\n\n")
+
+fei_summary <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    n = n(),
+    mean_FEI = mean(FEI_observed, na.rm = TRUE),
+    median_FEI = median(FEI_observed, na.rm = TRUE),
+    sd_FEI = sd(FEI_observed, na.rm = TRUE),
+    min_FEI = min(FEI_observed, na.rm = TRUE),
+    max_FEI = max(FEI_observed, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+print(fei_summary)
+
+cat("\n=== SFEI SUMMARY STATISTICS BY IUCN STATUS ===\n\n")
+
+sfei_summary <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    n = n(),
+    mean_SFEI = mean(SFEI, na.rm = TRUE),
+    median_SFEI = median(SFEI, na.rm = TRUE),
+    sd_SFEI = sd(SFEI, na.rm = TRUE),
+    pct_highly_overexposed = round(100 * sum(SFEI > 1.96) / n(), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+print(sfei_summary)
+
+# Skewness
+cat("\n=== DISTRIBUTION SHAPE (Skewness) ===\n")
+
+skewness_fei <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    skewness_FEI = skewness(FEI_observed, na.rm = TRUE),
+    skewness_SFEI = skewness(SFEI, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+print(skewness_fei)
+
+#======================
+# 2. NON-PARAMETRIC STATISTICAL TESTS
+#======================
+
+cat("\n=== NON-PARAMETRIC STATISTICAL TESTS ===\n")
+
+# --- FEI Tests ---
+cat("\n--- FEI TESTS ---\n")
+
+# Jonckheere-Terpstra test (for increasing trend: do more threatened species have higher FEI?)
+cat("\n1. JONCKHEERE-TERPSTRA TEST (FEI ~ IUCN, increasing):\n")
+jt_fei <- JonckheereTerpstraTest(fei_iucn_data$FEI_observed,
+                                  fei_iucn_data$IUCN,
+                                  alternative = "increasing")
+print(jt_fei)
+
+# Spearman correlation
+cat("\n2. SPEARMAN RANK CORRELATION (FEI ~ IUCN):\n")
+spearman_fei <- cor.test(fei_iucn_data$IUCN,
+                          fei_iucn_data$FEI_observed,
+                          method = "spearman")
+print(spearman_fei)
+
+# KS test (LC vs CR)
+cat("\n3. KOLMOGOROV-SMIRNOV TEST (FEI: LC vs CR):\n")
+ks_fei <- ks.test(
+  fei_iucn_data$FEI_observed[fei_iucn_data$IUCN_status == "LC"],
+  fei_iucn_data$FEI_observed[fei_iucn_data$IUCN_status == "CR"]
+)
+print(ks_fei)
+
+# --- SFEI Tests ---
+cat("\n--- SFEI TESTS ---\n")
+
+# Jonckheere-Terpstra test
+cat("\n1. JONCKHEERE-TERPSTRA TEST (SFEI ~ IUCN, increasing):\n")
+jt_sfei <- JonckheereTerpstraTest(fei_iucn_data$SFEI,
+                                   fei_iucn_data$IUCN,
+                                   alternative = "increasing")
+print(jt_sfei)
+
+# Spearman correlation
+cat("\n2. SPEARMAN RANK CORRELATION (SFEI ~ IUCN):\n")
+spearman_sfei <- cor.test(fei_iucn_data$IUCN,
+                           fei_iucn_data$SFEI,
+                           method = "spearman")
+print(spearman_sfei)
+
+# KS test (LC vs CR)
+cat("\n3. KOLMOGOROV-SMIRNOV TEST (SFEI: LC vs CR):\n")
+ks_sfei <- ks.test(
+  fei_iucn_data$SFEI[fei_iucn_data$IUCN_status == "LC"],
+  fei_iucn_data$SFEI[fei_iucn_data$IUCN_status == "CR"]
+)
+print(ks_sfei)
+
+#======================
+# 3. QUANTILE REGRESSION
+#======================
+
+cat("\n=== QUANTILE REGRESSION ANALYSIS ===\n")
+
+quantiles <- seq(0.3, 0.9, by = 0.1)
+
+# --- FEI Quantile Regression ---
+qr_fei_results <- data.frame()
+
+for (tau in quantiles) {
+  tryCatch({
+    qr_model <- rq(FEI_observed ~ IUCN, tau = tau, data = fei_iucn_data)
+    qr_summary <- summary(qr_model, se = "boot", R = 500)
+    coef_table <- qr_summary$coefficients
+    
+    temp_result <- data.frame(
+      Quantile = paste0("Q", tau * 100),
+      Tau = tau,
+      Slope = coef_table[2, 1],
+      SE = coef_table[2, 2],
+      t_value = coef_table[2, 3],
+      p_value = coef_table[2, 4]
+    )
+    
+    qr_fei_results <- rbind(qr_fei_results, temp_result)
+  }, error = function(e) {
+    cat(paste("Error at tau =", tau, ":", e$message, "\n"))
+  })
+}
+
+qr_fei_results$Significant <- ifelse(qr_fei_results$p_value < 0.05, "Yes*", "No")
+
+cat("\nFEI Quantile Regression Results:\n")
+print(qr_fei_results)
+
+# --- SFEI Quantile Regression ---
+qr_sfei_results <- data.frame()
+
+for (tau in quantiles) {
+  tryCatch({
+    qr_model <- rq(SFEI ~ IUCN, tau = tau, data = fei_iucn_data)
+    qr_summary <- summary(qr_model, se = "boot", R = 500)
+    coef_table <- qr_summary$coefficients
+    
+    temp_result <- data.frame(
+      Quantile = paste0("Q", tau * 100),
+      Tau = tau,
+      Slope = coef_table[2, 1],
+      SE = coef_table[2, 2],
+      t_value = coef_table[2, 3],
+      p_value = coef_table[2, 4]
+    )
+    
+    qr_sfei_results <- rbind(qr_sfei_results, temp_result)
+  }, error = function(e) {
+    cat(paste("Error at tau =", tau, ":", e$message, "\n"))
+  })
+}
+
+qr_sfei_results$Significant <- ifelse(qr_sfei_results$p_value < 0.05, "Yes*", "No")
+
+cat("\nSFEI Quantile Regression Results:\n")
+print(qr_sfei_results)
+
+#======================
+# 4. VISUALIZATIONS
+#======================
+
+# Calculate sample sizes for labels
+n_per_category <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+x_labels <- paste0(iucn_order, "\n(n=", n_per_category$n, ")")
+
+# --- Panel A: FEI by IUCN ---
+panel_fei <- ggplot(fei_iucn_data,
+                     aes(x = factor(IUCN_status, levels = iucn_order),
+                         y = FEI_observed)) +
+  geom_jitter(aes(color = IUCN_status),
+              width = 0.15,
+              size = 1.5,
+              alpha = 0.6) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black") +
+  stat_summary(fun.data = function(x) {
+    mean_val <- mean(x, na.rm = TRUE)
+    se_val <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+    return(data.frame(y = mean_val,
+                      ymin = mean_val - se_val,
+                      ymax = mean_val + se_val))
+  },
+  geom = "errorbar",
+  width = 0.15,
+  color = "black") +
+  scale_color_manual(values = iucn_colors) +
+  scale_x_discrete(labels = x_labels) +
+  labs(
+    x = "IUCN Red List threat status",
+    y = "FEI (log fishing hours)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+
+# --- Panel B: SFEI by IUCN ---
+panel_sfei <- ggplot(fei_iucn_data,
+                      aes(x = factor(IUCN, levels = iucn_order),
+                          y = SFEI)) +
+  geom_hline(yintercept = 1.96, linetype = "dashed", color = "red", linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", linewidth = 0.3) +
+  geom_jitter(aes(color = IUCN),
+              width = 0.15,
+              size = 1.5,
+              alpha = 0.6) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black") +
+  stat_summary(fun.data = function(x) {
+    mean_val <- mean(x, na.rm = TRUE)
+    se_val <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+    return(data.frame(y = mean_val,
+                      ymin = mean_val - se_val,
+                      ymax = mean_val + se_val))
+  },
+  geom = "errorbar",
+  width = 0.15,
+  color = "black") +
+  scale_color_manual(values = iucn_colors) +
+  scale_x_discrete(labels = x_labels) +
+  annotate("text", x = 5.4, y = 1.96, label = "p = 0.05", 
+           color = "red", size = 3, hjust = 0) +
+  labs(
+    x = "IUCN Red List threat status",
+    y = "SFEI (Z-score)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  coord_cartesian(clip = "off")
+
+# Combine panels
+fig_fei_sfei_iucn <- ggarrange(
+  panel_fei, panel_sfei,
+  ncol = 2, nrow = 1,
+  labels = c("(A)", "(B)"),
+  font.label = list(size = 14, face = "bold")
+)
+
+print(fig_fei_sfei_iucn)
+
+ggsave(
+  here::here("R", "Outputs", "Fig_FEI_SFEI_by_IUCN.png"),
+  fig_fei_sfei_iucn,
+  width = 14, height = 6, dpi = 300, bg = "white"
+)
+
+#======================
+# 5. SUMMARY TABLE FOR MANUSCRIPT
+#======================
+
+cat("\n=== SUMMARY FOR MANUSCRIPT ===\n\n")
+
+# Create combined summary table
+summary_table <- fei_iucn_data %>%
+  group_by(IUCN_status) %>%
+  summarise(
+    n = n(),
+    FEI_mean = round(mean(FEI_observed, na.rm = TRUE), 2),
+    FEI_se = round(sd(FEI_observed, na.rm = TRUE) / sqrt(n()), 2),
+    SFEI_mean = round(mean(SFEI, na.rm = TRUE), 2),
+    SFEI_se = round(sd(SFEI, na.rm = TRUE) / sqrt(n()), 2),
+    pct_overexposed = round(100 * sum(SFEI > 1.96) / n(), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(IUCN_status, levels = iucn_order))
+
+kable(summary_table,
+      format = "html",
+      col.names = c("IUCN", "n", "FEI mean", "FEI SE", 
+                    "SFEI mean", "SFEI SE", "% Highly overexposed"),
+      caption = "Fishing exposure metrics by IUCN threat status") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+# Save summary
+write_csv(summary_table, here::here("R", "Outputs", "FEI_SFEI_by_IUCN_summary.csv"))
+
+cat("\nAnalysis complete.\n")
+
+```
+
+## Trait sensibility 
+
+```{r}
+# =============================================================================
+# Calcul de l'indice de Sensibilité (S) et Vulnérabilité (V) à la pêche
+# =============================================================================
+
+library(tidyverse)
+library(readxl)
+library(here)
+
+# -----------------------------------------------------------------------------
+# 1. Charger les données
+# -----------------------------------------------------------------------------
+
+# Traits
+traits <- read_excel(here("R", "Data", "Trait_data_final.xlsx"))
+
+# -----------------------------------------------------------------------------
+# 2. Calculer les terciles de max.length
+# -----------------------------------------------------------------------------
+# Convertir en numérique (les "NA" texte deviennent NA)
+traits <- traits %>%
+  mutate(max.length = as.numeric(max.length))
+
+# Vérifier
+summary(traits$max.length)
+
+# Maintenant calculer les terciles
+length_terciles <- quantile(traits$max.length, probs = c(1/3, 2/3), na.rm = TRUE)
+length_terciles
+length_terciles <- quantile(traits$max.length, probs = c(1/3, 2/3), na.rm = TRUE)
+cat("Terciles de max.length:\n")
+cat("  T1 (33%):", length_terciles[1], "cm\n")
+cat("  T2 (67%):", length_terciles[2], "cm\n")
+
+# -----------------------------------------------------------------------------
+# 3. Calculer l'indice de Sensibilité (S)
+# -----------------------------------------------------------------------------
+
+traits_sensitivity <- traits %>%
+  mutate(
+    # Score max.length (terciles)
+    score_length = case_when(
+      max.length <= length_terciles[1] ~ 0,
+      max.length <= length_terciles[2] ~ 1,
+      max.length > length_terciles[2] ~ 2,
+      TRUE ~ NA_real_
+    ),
+    
+    # Score reproduction
+    score_repro = case_when(
+      reproduction == "oviparous" ~ 0,
+      reproduction == "ovoviviparous" ~ 1,
+      reproduction == "viviparous" ~ 2,
+      TRUE ~ NA_real_
+    ),
+    
+    # Score deepwater
+    score_deep = case_when(
+      deepwater == "no" ~ 0,
+      deepwater == "yes" ~ 2,
+      TRUE ~ NA_real_
+    ),
+    
+    # Score habitat
+    score_habitat = case_when(
+      habitat == "shelf" ~ 2,
+      habitat %in% c("shelf/slope", "slope", "all") ~ 1,
+      habitat %in% c("slope/offshore", "offshore") ~ 0,
+      TRUE ~ NA_real_
+    ),
+    
+    # Score vertical
+    score_vertical = case_when(
+      vertical == "benthic" ~ 0,
+      vertical == "benthopelagic" ~ 1,
+      vertical == "pelagic" ~ 2,
+      TRUE ~ NA_real_
+    ),
+    
+    # Sensibilité totale (normalisée 0-1)
+    S = (score_length + score_repro + score_deep + score_habitat + score_vertical) / 10
+  )
+
+# -----------------------------------------------------------------------------
+# 4. Résumé de la sensibilité
+# -----------------------------------------------------------------------------
+
+cat("\n=== Résumé de l'indice de Sensibilité (S) ===\n")
+print(summary(traits_sensitivity$S))
+
+cat("\nNombre d'espèces avec S calculé:", sum(!is.na(traits_sensitivity$S)), "\n")
+cat("Nombre d'espèces avec NA:", sum(is.na(traits_sensitivity$S)), "\n")
+
+# Distribution des scores individuels
+cat("\n=== Distribution des scores par trait ===\n")
+traits_sensitivity %>%
+  summarise(
+    across(starts_with("score_"), 
+           list(mean = ~mean(., na.rm = TRUE), 
+                na = ~sum(is.na(.))),
+           .names = "{.col}_{.fn}")
+  ) %>%
+  pivot_longer(everything()) %>%
+  print(n = 20)
+
+# -----------------------------------------------------------------------------
+# 5. Fusionner avec FEI/SFEI et calculer la Vulnérabilité (V)
+# -----------------------------------------------------------------------------
+
+# Normaliser FEI entre 0 et 1 pour le calcul de P (exposition)
+# Recalculer species_vulnerability avec le filtre de coverage
+species_vulnerability <- traits_sensitivity %>%
+  dplyr::select(Species, Family, Order, Superorder, 
+                max.length, reproduction, deepwater, habitat, vertical,
+                score_length, score_repro, score_deep, score_habitat, score_vertical, S) %>%
+  left_join(
+    SFEI_results %>% 
+      filter(Fishing_Data_Coverage > 0.5) %>%  # Appliquer le même filtre que dans le manuscrit
+      dplyr::select(Species, FEI_observed, SFEI, p_value, IUCN, FUSE, EDGE2),
+    by = "Species"
+  ) %>%
+  filter(!is.na(FEI_observed) & !is.na(S)) %>%
+  mutate(
+    P = (FEI_observed - min(FEI_observed, na.rm = TRUE)) / 
+        (max(FEI_observed, na.rm = TRUE) - min(FEI_observed, na.rm = TRUE)),
+    V = S * P
+  )
+
+nrow(species_vulnerability)
+# -----------------------------------------------------------------------------
+# 6. Résumé
+# -----------------------------------------------------------------------------
+
+cat("=== Résumé de la Sensibilité (S) ===\n")
+print(summary(species_vulnerability$S))
+
+cat("\n=== Résumé de l'Exposition (P) ===\n")
+print(summary(species_vulnerability$P))
+
+cat("\n=== Résumé de la Vulnérabilité (V) ===\n")
+print(summary(species_vulnerability$V))
+
+cat("\nNombre d'espèces avec V calculé:", nrow(species_vulnerability), "\n")
+
+# -----------------------------------------------------------------------------
+# 7. Top 20 espèces les plus vulnérables
+# -----------------------------------------------------------------------------
+
+top20_vulnerable <- species_vulnerability %>%
+  arrange(desc(V)) %>%
+  dplyr::select(Species, IUCN, S, P, V, FEI_observed, SFEI) %>%
+  head(20)
+
+cat("\n=== Top 20 espèces les plus vulnérables à la pêche ===\n")
+print(top20_vulnerable, n = 20)
+
+# -----------------------------------------------------------------------------
+# 7. Visualisation: S vs P (comme Fig. 2b,c dans Albouy et al.)
+# -----------------------------------------------------------------------------
+
+p_vulnerability <- ggplot(species_vulnerability, aes(x = S, y = P)) +
+  geom_jitter(aes(color = factor(IUCN), size = V), alpha = 0.6, width = 0.015, height = 0) +
+  scale_color_manual(
+    values = c("1" = "#4DAF4A", "2" = "#377EB8", "3" = "#FFFF33", 
+               "4" = "#FF7F00", "5" = "#E41A1C"),
+    labels = c("LC", "NT", "VU", "EN", "CR"),
+    name = "IUCN Status"
+  ) +
+  scale_size_continuous(range = c(1, 8), name = "Vulnerability (V)") +
+  labs(
+    x = "Intrinsic Sensitivity to Fishing (S)",
+    y = "Fishing Exposure (P, normalized FEI)",
+    title = "Vulnerability of elasmobranchs to fishing pressure"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+
+print(p_vulnerability)
+
+ggsave(here("R", "Outputs", "Fig_vulnerability_S_vs_P.png"), 
+       p_vulnerability, width = 10, height = 8, dpi = 300)
+
+# -----------------------------------------------------------------------------
+# 8. Sauvegarder les résultats
+# -----------------------------------------------------------------------------
+
+saveRDS(species_vulnerability, here("R", "Outputs", "species_vulnerability.rds"))
+write_csv(species_vulnerability, here("R", "Outputs", "species_vulnerability.csv"))
+
+cat("\nFichiers sauvegardés dans R/Outputs/\n")
+
+# =============================================================================
+# Cartographie de la vulnérabilité (V) à la pêche
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Transformer species_presence_list en data.frame long
+# -----------------------------------------------------------------------------
+
+species_cell_long <- bind_rows(
+  lapply(names(species_presence_list), function(sp) {
+    data.frame(
+      Species = sp,
+      PUID = species_presence_list[[sp]]
+    )
+  })
+)
+
+cat("Dimensions species_cell_long:", nrow(species_cell_long), "lignes\n")
+
+# -----------------------------------------------------------------------------
+# 2. Joindre avec la vulnérabilité et les coordonnées
+# -----------------------------------------------------------------------------
+
+cell_vulnerability <- species_cell_long %>%
+  # Joindre V par espèce
+  left_join(
+    species_vulnerability %>% dplyr::select(Species, S, P, V, IUCN),
+    by = "Species"
+  ) %>%
+  filter(!is.na(V)) %>%
+  # Joindre coordonnées par cellule
+  left_join(
+    cell_metrics %>% dplyr::select(PUID, Longitude, Latitude),
+    by = "PUID"
+  ) %>%
+  filter(!is.na(Longitude)) %>%
+  # Agréger par cellule
+  group_by(PUID, Longitude, Latitude) %>%
+  summarise(
+    mean_V = mean(V, na.rm = TRUE),
+    mean_S = mean(S, na.rm = TRUE),
+    mean_P = mean(P, na.rm = TRUE),
+    n_species = n(),
+    # Richesse d'espèces très vulnérables (V > 0.4)
+    richness_high_V = sum(V > 0.4, na.rm = TRUE),
+    # Richesse d'espèces vulnérables ET menacées (V > 0.3 & IUCN >= VU)
+    richness_vulnerable_threatened = sum(V > 0.3 & IUCN >= 3, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cat("\n=== Résumé de la vulnérabilité par cellule ===\n")
+print(summary(cell_vulnerability$mean_V))
+cat("Nombre de cellules:", nrow(cell_vulnerability), "\n")
+
+# -----------------------------------------------------------------------------
+# 3. Cartographie
+# -----------------------------------------------------------------------------
+
+library(patchwork)
+
+# Carte V moyenne
+p_map_V <- ggplot() +
+  geom_tile(data = cell_vulnerability, 
+            aes(x = Longitude, y = Latitude, fill = mean_V)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "inferno", name = "Mean V") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(A) Mean Vulnerability to Fishing (V)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Carte S moyenne
+p_map_S <- ggplot() +
+  geom_tile(data = cell_vulnerability, 
+            aes(x = Longitude, y = Latitude, fill = mean_S)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "mako", name = "Mean S") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(B) Mean Intrinsic Sensitivity (S)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Carte richesse espèces très vulnérables
+p_map_high_V <- ggplot() +
+  geom_tile(data = cell_vulnerability, 
+            aes(x = Longitude, y = Latitude, fill = richness_high_V)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_viridis_c(option = "rocket", name = "Species\nrichness") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(C) Richness of highly vulnerable species (V > 0.4)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Carte richesse espèces vulnérables ET menacées
+p_map_vuln_threatened <- ggplot() +
+  geom_tile(data = cell_vulnerability, 
+            aes(x = Longitude, y = Latitude, fill = richness_vulnerable_threatened)) +
+  geom_sf(data = world, fill = "grey40", color = NA) +
+  scale_fill_gradient(low = "white", high = "darkred", name = "Species\nrichness") +
+  coord_sf(xlim = c(-180, 180), ylim = c(-90, 90), expand = FALSE) +
+  labs(title = "(D) Richness of vulnerable AND threatened species (V > 0.3 & IUCN ≥ VU)") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+
+# Combiner
+p_combined <- (p_map_V | p_map_S) / (p_map_high_V | p_map_vuln_threatened)
+
+print(p_combined)
+
+ggsave(here("R", "Outputs", "Fig_vulnerability_maps.png"), 
+       p_combined, width = 14, height = 10, dpi = 300)
+
+```
