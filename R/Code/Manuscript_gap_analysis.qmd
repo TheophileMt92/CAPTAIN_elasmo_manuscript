@@ -6,7 +6,7 @@ format:
   html:
     toc: true
     toc-location: right
-    css: custom.css
+    css: ../Quarto_template/custom.css
     output-file: "Manuscript_gap_analysis.html"
     self-contained: true
     code-fold: true

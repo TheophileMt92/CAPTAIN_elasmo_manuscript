@@ -24,6 +24,7 @@ All R analyses are provided as reproducible Quarto reports (`.qmd`), with their 
 ├── R/
 │   ├── Code/                     Quarto reports (.qmd) and rendered reports (.html)
 │   ├── Data/                     Input data and CAPTAIN outputs used by the reports
+│   ├── Quarto_template/          Report styling (CSS, header, footer) used by all reports
 │   └── Outputs/                  Figures and tables produced by the reports
 └── Python/
     ├── captain_script_and_data.zip   CAPTAIN code, training configurations and training logs
@@ -117,11 +118,6 @@ Note that output file names reflect an earlier figure numbering. The manuscript 
 
 ---
 
-## Other files
-
-`R/Code/Fishing_exposure.qmd` (Fishing Exposure Index, FEI and SFEI) belongs to a separate follow-up study and is not used in this manuscript.
-
----
 
 ## Citation and contact
 

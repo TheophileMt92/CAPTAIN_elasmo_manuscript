@@ -13,7 +13,7 @@ R/Data/rf_*.rds
 R/Data/World_EEZ_v12_20231025/
 R/Data/bathymetry-0.1deg.tif
 
-# Separate follow-up study (fishing exposure / vulnerability)
+# Files not part of this study
 R/Data/Cell_FEI_SFEI_metrics.rds
 R/Data/Species_FEI_results.rds
 R/Data/Species_SFEI_results.rds
@@ -23,3 +23,7 @@ R/Outputs/*vulnerability*
 R/Outputs/Table_high_conflict_species.png
 R/Outputs/Table_top20_FEI_species.png
 R/Outputs/Table_top20_SFEI_overexposed_species.png
+R/Code/Fishing_exposure*
+
+# Trait data: available with Pimiento et al. (2023)
+R/Data/Trait_data_final.xlsx
