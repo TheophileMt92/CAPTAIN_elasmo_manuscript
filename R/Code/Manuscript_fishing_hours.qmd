@@ -401,7 +401,7 @@ save_kable(table_output, file = here::here("R","Outputs","summary_stats_table.pn
 
 ## Random forest model
 
-### Data preparation 
+### Data preparation
 
 Predicting fishing hours in areas with only SAR data at a 0.1 degree resolution. Using a random forest model of \>160,000 associations between SAR vessel detections and AIS fishing hours globally, geographical coordinates, distance to ports, distance to shore and bathymetry.
 
@@ -569,8 +569,7 @@ kable_output <- summary_stats %>%
 #  na.omit()
 ```
 
-
-### Random forest with normalised SAR detections 
+### Random forest with normalised SAR detections
 
 ```{r}
 # ---- Prepare training data with normalised SAR detections ----
@@ -768,6 +767,7 @@ ggsave(here::here("R", "Outputs", "predicted_plot_SAR_normalized.png"),
 ```
 
 ### Comparison of transformations - normalised models
+
 ```{r}
 validation_data_norm <- combined_data_with_rasters %>%
   mutate(
@@ -848,31 +848,15 @@ kable(results_comparison, format = "html", digits = 2,
   column_spec(1, bold = TRUE)
 ```
 
-
 #### Interpretation of model comparison metrics
 
-Four model variants were compared to identify the optimal transformation strategy 
-for normalised SAR detections per overpass. The results clearly favour 
-log-transforming the response variable (fishing hours).
+Four model variants were compared to identify the optimal transformation strategy for normalised SAR detections per overpass. The results clearly favour log-transforming the response variable (fishing hours).
 
-The fishing hours log and both-log models achieve the highest R-squared (0.77) 
-and the lowest MAPE (85.64% and 86.25% respectively), compared to over 1,780% 
-for models without response transformation. The median absolute error is similarly 
-improved, dropping from ~33 hours to ~12 hours with log transformation of the 
-response. Log-transforming the predictor (detections per overpass) alone provides 
-no meaningful improvement over the no-transform version across any metric.
+The fishing hours log and both-log models achieve the highest R-squared (0.77) and the lowest MAPE (85.64% and 86.25% respectively), compared to over 1,780% for models without response transformation. The median absolute error is similarly improved, dropping from \~33 hours to \~12 hours with log transformation of the response. Log-transforming the predictor (detections per overpass) alone provides no meaningful improvement over the no-transform version across any metric.
 
-The fishing hours log model (log_total_fishing_hours ~ detections_per_overpass) 
-is selected as the final model. It performs marginally better than the both-log 
-variant on MAPE (85.64% vs 86.25%) and RMSE (1413 vs 1415), and is simpler to 
-interpret since the predictor remains on its original scale.
+The fishing hours log model (log_total_fishing_hours \~ detections_per_overpass) is selected as the final model. It performs marginally better than the both-log variant on MAPE (85.64% vs 86.25%) and RMSE (1413 vs 1415), and is simpler to interpret since the predictor remains on its original scale.
 
-Compared to the previous non-normalised model (R-squared = 0.82, MAPE = 69.71%), 
-performance is slightly reduced. This is expected: normalisation by overpass 
-frequency removes a spurious signal that the original model was exploiting, namely 
-systematic variation in detection counts driven by uneven satellite coverage rather than true differences in fishing intensity. The normalised model is therefore 
-preferred on methodological grounds despite the modest reduction in predictive 
-accuracy.
+Compared to the previous non-normalised model (R-squared = 0.82, MAPE = 69.71%), performance is slightly reduced. This is expected: normalisation by overpass frequency removes a spurious signal that the original model was exploiting, namely systematic variation in detection counts driven by uneven satellite coverage rather than true differences in fishing intensity. The normalised model is therefore preferred on methodological grounds despite the modest reduction in predictive accuracy.
 
 ### Selected Model performance
 

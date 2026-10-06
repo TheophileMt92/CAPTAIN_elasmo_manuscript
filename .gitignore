@@ -3,3 +3,23 @@
 .Ruserdata
 .Rproj.user/
 .DS_Store
+
+# Large raw/intermediate data (archived on Zenodo or downloadable from source; see README)
+R/Data/AIS Fishing Effort 2017-2020/
+R/Data/SAR Vessel detections 2017-2020/
+R/Data/AIS_fishing.Rdata
+R/Data/SAR_fishing.Rdata
+R/Data/rf_*.rds
+R/Data/World_EEZ_v12_20231025/
+R/Data/bathymetry-0.1deg.tif
+
+# Separate follow-up study (fishing exposure / vulnerability)
+R/Data/Cell_FEI_SFEI_metrics.rds
+R/Data/Species_FEI_results.rds
+R/Data/Species_SFEI_results.rds
+R/Data/FAO_Major_Fishing_Areas.geojson
+R/Outputs/*FEI*
+R/Outputs/*vulnerability*
+R/Outputs/Table_high_conflict_species.png
+R/Outputs/Table_top20_FEI_species.png
+R/Outputs/Table_top20_SFEI_overexposed_species.png

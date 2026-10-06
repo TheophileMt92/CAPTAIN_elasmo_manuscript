@@ -1,0 +1,228 @@
+"ECOREGION","PROVINCE","REALM","mean_SES","median_SES","sd_SES","n_cells"
+"Cocos-Keeling/Christmas Island","Java Transitional","Central Indo-Pacific",2.91453230169235,2.91453230169235,NA,272
+"East Antarctic Dronning Maud Land","Continental High Antarctic","Southern Ocean",2.76661845419068,2.76661845419068,NA,13
+"Ross Sea","Continental High Antarctic","Southern Ocean",2.76661845419068,2.76661845419068,NA,36
+"Chagos","Central Indian Ocean Islands","Western Indo-Pacific",2.47151514198217,2.47151514198217,NA,207
+"Phoenix/Tokelau/Northern Cook Islands","Central Polynesia","Eastern Indo-Pacific",2.29798693744849,2.29798693744849,NA,812
+"East Antarctic Wilkes Land","Continental High Antarctic","Southern Ocean",2.2798026230356,2.2798026230356,NA,2
+"Hawaii","Hawaii","Eastern Indo-Pacific",2.23250283460624,2.23250283460624,NA,924
+"Line Islands","Central Polynesia","Eastern Indo-Pacific",2.20891225117139,2.20891225117139,NA,487
+"Ogasawara Islands","Tropical Northwestern Pacific","Central Indo-Pacific",2.15170037725219,2.15170037725219,NA,404
+"Cocos Islands","Tropical East Pacific","Tropical Eastern Pacific",2.10856633369129,2.10856633369129,NA,109
+"Mariana Islands","Tropical Northwestern Pacific","Central Indo-Pacific",2.09185244392339,2.09185244392339,NA,336
+"Macquarie Island","Subantarctic Islands","Southern Ocean",2.08783711771272,2.08783711771272,NA,146
+"Southern Cook/Austral Islands","Southeast Polynesia","Eastern Indo-Pacific",2.07963896303211,2.07963896303211,NA,586
+"Clipperton","Tropical East Pacific","Tropical Eastern Pacific",2.03123065995044,2.03123065995044,NA,142
+"Mascarene Islands","Western Indian Ocean","Western Indo-Pacific",1.9724513665267,1.9724513665267,NA,352
+"Rapa-Pitcairn","Southeast Polynesia","Eastern Indo-Pacific",1.9568454890858,1.9568454890858,NA,427
+"St. Helena and Ascension Islands","St. Helena and Ascension Islands","Tropical Atlantic",1.9344492533046,1.9344492533046,NA,287
+"Gilbert/Ellis Islands","Marshall, Gilbert and Ellis Islands","Eastern Indo-Pacific",1.92937240965331,1.92937240965331,NA,734
+"East Caroline Islands","Tropical Northwestern Pacific","Central Indo-Pacific",1.88975940571672,1.88975940571672,NA,729
+"West Caroline Islands","Tropical Northwestern Pacific","Central Indo-Pacific",1.84466856448286,1.84466856448286,NA,326
+"Marquesas","Marquesas","Eastern Indo-Pacific",1.81424643819499,1.81424643819499,NA,240
+"Vanuatu","Tropical Southwestern Pacific","Central Indo-Pacific",1.78323860189325,1.78323860189325,NA,510
+"Trindade and Martin Vaz Islands","Tropical Southwestern Atlantic","Tropical Atlantic",1.7425647114948,1.7425647114948,NA,150
+"Marshall Islands","Marshall, Gilbert and Ellis Islands","Eastern Indo-Pacific",1.73626007575511,1.73626007575511,NA,727
+"Cargados Carajos/Tromelin Island","Western Indian Ocean","Western Indo-Pacific",1.64339066069641,1.64339066069641,NA,271
+"Samoa Islands","Central Polynesia","Eastern Indo-Pacific",1.61594498409649,1.61594498409649,NA,258
+"Revillagigedos","Tropical East Pacific","Tropical Eastern Pacific",1.61092621462039,1.61092621462039,NA,221
+"Fiji Islands","Tropical Southwestern Pacific","Central Indo-Pacific",1.49509534926734,1.49509534926734,NA,269
+"Northern Galapagos Islands","Galapagos","Tropical Eastern Pacific",1.48949208257868,1.48949208257868,NA,69
+"Tuamotus","Southeast Polynesia","Eastern Indo-Pacific",1.48288123033302,1.48288123033302,NA,819
+"Sao Pedro and Sao Paulo Islands","Tropical Southwestern Atlantic","Tropical Atlantic",1.31945045961233,1.31945045961233,NA,130
+"Tonga Islands","Tropical Southwestern Pacific","Central Indo-Pacific",1.30908581528849,1.30908581528849,NA,261
+"New Caledonia","Tropical Southwestern Pacific","Central Indo-Pacific",1.28400737912485,1.28400737912485,NA,403
+"Solomon Archipelago","Eastern Coral Triangle","Central Indo-Pacific",1.26840817233059,1.26840817233059,NA,549
+"Western Galapagos Islands","Galapagos","Tropical Eastern Pacific",1.2525138874224,1.2525138874224,NA,76
+"Bermuda","Tropical Northwestern Atlantic","Tropical Atlantic",1.07617411816281,1.07617411816281,NA,147
+"Andaman and Nicobar Islands","Andaman","Western Indo-Pacific",1.03661814293617,1.03661814293617,NA,258
+"Eastern Galapagos Islands","Galapagos","Tropical Eastern Pacific",1.01035855289865,1.01035855289865,NA,128
+"Society Islands","Southeast Polynesia","Eastern Indo-Pacific",0.941708289356091,0.941708289356091,NA,165
+"Cape Verde","West African Transition","Tropical Atlantic",0.9416814360236,0.9416814360236,NA,261
+"Seychelles","Western Indian Ocean","Western Indo-Pacific",0.940683262021974,0.940683262021974,NA,386
+"Maldives","Central Indian Ocean Islands","Western Indo-Pacific",0.926414551279348,0.926414551279348,NA,426
+"South Orkney Islands","Scotia Sea","Southern Ocean",0.882489113397102,0.882489113397102,NA,105
+"South India and Sri Lanka","West and South Indian Shelf","Western Indo-Pacific",0.842808198918834,0.842808198918834,NA,211
+"South China Sea Oceanic Islands","South China Sea","Central Indo-Pacific",0.785286063491076,0.785286063491076,NA,420
+"Lord Howe and Norfolk Islands","Lord Howe and Norfolk Islands","Central Indo-Pacific",0.672020438101371,0.672020438101371,NA,279
+"Natal","Agulhas","Temperate Southern Africa",0.669132610990351,0.669132610990351,NA,124
+"Mexican Tropical Pacific","Tropical East Pacific","Tropical Eastern Pacific",0.645911038128411,0.645911038128411,NA,210
+"Nicoya","Tropical East Pacific","Tropical Eastern Pacific",0.634411851167988,0.634411851167988,NA,84
+"Western Sumatra","Andaman","Western Indo-Pacific",0.617590704799873,0.617590704799873,NA,218
+"Kermadec Island","Northern New Zealand","Temperate Australasia",0.614904910515859,0.614904910515859,NA,189
+"Guayaquil","Tropical East Pacific","Tropical Eastern Pacific",0.544206520354092,0.544206520354092,NA,75
+"Northern Monsoon Current Coast","Western Indian Ocean","Western Indo-Pacific",0.538789560604064,0.538789560604064,NA,102
+"Panama Bight","Tropical East Pacific","Tropical Eastern Pacific",0.492615682755783,0.492615682755783,NA,155
+"Southern Java","Java Transitional","Central Indo-Pacific",0.489466235406084,0.489466235406084,NA,181
+"Chiapas-Nicaragua","Tropical East Pacific","Tropical Eastern Pacific",0.481036710114429,0.481036710114429,NA,109
+"Western and Northern Madagascar","Western Indian Ocean","Western Indo-Pacific",0.454531843937551,0.454531843937551,NA,391
+"Easter Island","Easter Island","Eastern Indo-Pacific",0.42234013855724,0.42234013855724,NA,240
+"Central Somali Coast","Somali/Arabian","Western Indo-Pacific",0.400470852982169,0.400470852982169,NA,150
+"Fernando de Naronha and Atoll das Rocas","Tropical Southwestern Atlantic","Tropical Atlantic",0.387238352206849,0.387238352206849,NA,102
+"Humboldtian","Warm Temperate Southeastern Pacific","Temperate South America",0.377970927142355,0.377970927142355,NA,202
+"Western Arabian Sea","Somali/Arabian","Western Indo-Pacific",0.358670914621451,0.358670914621451,NA,185
+"Eastern India","Bay of Bengal","Western Indo-Pacific",0.353185789846484,0.353185789846484,NA,149
+"Southeast Papua New Guinea","Eastern Coral Triangle","Central Indo-Pacific",0.351359707105819,0.351359707105819,NA,71
+"South Kuroshio","South Kuroshio","Central Indo-Pacific",0.34537503728549,0.34537503728549,NA,355
+"Gulf of Guinea Islands","Gulf of Guinea","Tropical Atlantic",0.324784025965142,0.324784025965142,NA,133
+"Eastern Caribbean","Tropical Northwestern Atlantic","Tropical Atlantic",0.306991169102427,0.306991169102427,NA,289
+"South Sandwich Islands","Scotia Sea","Southern Ocean",0.250018887575784,0.250018887575784,NA,189
+"Namib","Benguela","Temperate Southern Africa",0.23438911084375,0.23438911084375,NA,131
+"Central Peru","Warm Temperate Southeastern Pacific","Temperate South America",0.23106812419369,0.23106812419369,NA,94
+"Juan Fernandez and Desventuradas","Juan Fernandez and Desventuradas","Temperate South America",0.156806071280551,0.156806071280551,NA,336
+"Delagoa","Western Indian Ocean","Western Indo-Pacific",0.153367170151262,0.153367170151262,NA,124
+"Amsterdam-St Paul","Amsterdam-St Paul","Temperate Southern Africa",0.0697682778074344,0.0697682778074344,NA,161
+"Heard and Macdonald Islands","Subantarctic Islands","Southern Ocean",0.061769181407143,0.061769181407143,NA,87
+"Southeast Madagascar","Western Indian Ocean","Western Indo-Pacific",0.0445207837428454,0.0445207837428454,NA,156
+"East African Coral Coast","Western Indian Ocean","Western Indo-Pacific",0.0253636661957499,0.0253636661957499,NA,175
+"Angolan","Gulf of Guinea","Tropical Atlantic",-0.00668774248284516,-0.00668774248284516,NA,120
+"Southern California Bight","Warm Temperate Northeast Pacific","Temperate Northern Pacific",-0.103799529953691,-0.103799529953691,NA,180
+"Ningaloo","Northwest Australian Shelf","Central Indo-Pacific",-0.116019662259549,-0.116019662259549,NA,54
+"Campbell Island","Subantarctic New Zealand","Southern Ocean",-0.142872171720444,-0.142872171720444,NA,113
+"Gulf of Guinea West","Gulf of Guinea","Tropical Atlantic",-0.16450391982804,-0.16450391982804,NA,188
+"Bismarck Sea","Eastern Coral Triangle","Central Indo-Pacific",-0.223561115761669,-0.223561115761669,NA,249
+"Solomon Sea","Eastern Coral Triangle","Central Indo-Pacific",-0.22859311023116,-0.22859311023116,NA,224
+"Gulf of Oman","Somali/Arabian","Western Indo-Pacific",-0.239282835087985,-0.239282835087985,NA,90
+"Northern Bay of Bengal","Bay of Bengal","Western Indo-Pacific",-0.25673620470572,-0.25673620470572,NA,149
+"Eastern Brazil","Tropical Southwestern Atlantic","Tropical Atlantic",-0.274968753361218,-0.274968753361218,NA,220
+"Coral Sea","Tropical Southwestern Pacific","Central Indo-Pacific",-0.275941373374807,-0.275941373374807,NA,251
+"Gulf of Guinea Upwelling","Gulf of Guinea","Tropical Atlantic",-0.30092263729567,-0.30092263729567,NA,113
+"Gulf of Aden","Red Sea and Gulf of Aden","Western Indo-Pacific",-0.301842851046431,-0.301842851046431,NA,185
+"Agulhas Bank","Agulhas","Temperate Southern Africa",-0.321750955947119,-0.321750955947119,NA,138
+"Azores Canaries Madeira","Lusitanian","Temperate Northern Atlantic",-0.38344190936131,-0.38344190936131,NA,644
+"Amazonia","North Brazil Shelf","Tropical Atlantic",-0.406727549066556,-0.406727549066556,NA,194
+"Halmahera","Western Coral Triangle","Central Indo-Pacific",-0.440824942807011,-0.440824942807011,NA,88
+"Guianan","North Brazil Shelf","Tropical Atlantic",-0.444669419158638,-0.444669419158638,NA,160
+"Bounty and Antipodes Islands","Subantarctic New Zealand","Southern Ocean",-0.463111828395821,-0.463111828395821,NA,182
+"Northeastern Brazil","Tropical Southwestern Atlantic","Tropical Atlantic",-0.494940865429916,-0.494940865429916,NA,228
+"Eastern Philippines","Western Coral Triangle","Central Indo-Pacific",-0.523389686577553,-0.523389686577553,NA,317
+"Bight of Sofala/Swamp Coast","Western Indian Ocean","Western Indo-Pacific",-0.52612305460042,-0.52612305460042,NA,88
+"Gulf of Guinea South","Gulf of Guinea","Tropical Atlantic",-0.527175945973894,-0.527175945973894,NA,68
+"Southwestern Caribbean","Tropical Northwestern Atlantic","Tropical Atlantic",-0.542266381282215,-0.542266381282215,NA,281
+"Auckland Island","Subantarctic New Zealand","Southern Ocean",-0.546704303668402,-0.546704303668402,NA,87
+"Sahelian Upwelling","West African Transition","Tropical Atlantic",-0.551389009832957,-0.551389009832957,NA,107
+"Papua","Western Coral Triangle","Central Indo-Pacific",-0.552931276715862,-0.552931276715862,NA,206
+"Western India","West and South Indian Shelf","Western Indo-Pacific",-0.584339452202655,-0.584339452202655,NA,187
+"Greater Antilles","Tropical Northwestern Atlantic","Tropical Atlantic",-0.597912561617101,-0.597912561617101,NA,377
+"Magdalena Transition","Warm Temperate Northeast Pacific","Temperate Northern Pacific",-0.599757621674579,-0.599757621674579,NA,60
+"Bahamian","Tropical Northwestern Atlantic","Tropical Atlantic",-0.670481876035955,-0.670481876035955,NA,341
+"Southern Caribbean","Tropical Northwestern Atlantic","Tropical Atlantic",-0.673224414673633,-0.673224414673633,NA,206
+"Namaqua","Benguela","Temperate Southern Africa",-0.690785962035062,-0.690785962035062,NA,140
+"Lesser Sunda","Western Coral Triangle","Central Indo-Pacific",-0.758169024126205,-0.758169024126205,NA,219
+"Western Caribbean","Tropical Northwestern Atlantic","Tropical Atlantic",-0.763150995442685,-0.763150995442685,NA,91
+"Prince Edward Islands","Subantarctic Islands","Southern Ocean",-0.839373784840614,-0.839373784840614,NA,105
+"Gulf of Guinea Central","Gulf of Guinea","Tropical Atlantic",-0.843374405310699,-0.843374405310699,NA,114
+"Central Chile","Warm Temperate Southeastern Pacific","Temperate South America",-0.89635078805602,-0.89635078805602,NA,103
+"Cortezian","Warm Temperate Northeast Pacific","Temperate Northern Pacific",-0.912269269253432,-0.912269269253432,NA,88
+"Central Kuroshio Current","Warm Temperate Northwest Pacific","Temperate Northern Pacific",-0.961137799248772,-0.961137799248772,NA,206
+"South Georgia","Scotia Sea","Southern Ocean",-0.986892167615021,-0.986892167615021,NA,223
+"Sulawesi Sea/Makassar Strait","Western Coral Triangle","Central Indo-Pacific",-1.00814759784546,-1.00814759784546,NA,252
+"Southern Gulf of Mexico","Tropical Northwestern Atlantic","Tropical Atlantic",-1.01131591904401,-1.01131591904401,NA,277
+"Northern California","Cold Temperate Northeast Pacific","Temperate Northern Pacific",-1.01390098744878,-1.01390098744878,NA,120
+"Kerguelen Islands","Subantarctic Islands","Southern Ocean",-1.04159212637415,-1.04159212637415,NA,191
+"Crozet Islands","Subantarctic Islands","Southern Ocean",-1.08431482722328,-1.08431482722328,NA,165
+"Banda Sea","Western Coral Triangle","Central Indo-Pacific",-1.1454707328629,-1.1454707328629,NA,299
+"High Arctic Archipelago","Arctic","Arctic",-1.15686496924237,-1.15686496924237,NA,268
+"Lancaster Sound","Arctic","Arctic",-1.15686496924237,-1.15686496924237,NA,20
+"Houtman","West Central Australian Shelf","Temperate Australasia",-1.15865497050586,-1.15865497050586,NA,62
+"Southeastern Brazil","Warm Temperate Southwestern Atlantic","Temperate South America",-1.18510160926685,-1.18510160926685,NA,131
+"Shark Bay","West Central Australian Shelf","Temperate Australasia",-1.20252059430697,-1.20252059430697,NA,59
+"Andaman Sea Coral Coast","Andaman","Western Indo-Pacific",-1.23657535234468,-1.23657535234468,NA,70
+"Saharan Upwelling","Lusitanian","Temperate Northern Atlantic",-1.27056091811463,-1.27056091811463,NA,198
+"Northeast Sulawesi","Western Coral Triangle","Central Indo-Pacific",-1.32936849287042,-1.32936849287042,NA,24
+"Northeastern Honshu","Cold Temperate Northwest Pacific","Temperate Northern Pacific",-1.34393716327104,-1.34393716327104,NA,100
+"Three Kings-North Cape","Northern New Zealand","Temperate Australasia",-1.36016975489189,-1.36016975489189,NA,94
+"Arabian (Persian) Gulf","Somali/Arabian","Western Indo-Pacific",-1.38039608462319,-1.38039608462319,NA,85
+"South Shetland Islands","Scotia Sea","Southern Ocean",-1.39113998587443,-1.39113998587443,NA,166
+"Scotian Shelf","Cold Temperate Northwest Atlantic","Temperate Northern Atlantic",-1.48791256887243,-1.48791256887243,NA,109
+"Araucanian","Warm Temperate Southeastern Pacific","Temperate South America",-1.52195363250841,-1.52195363250841,NA,110
+"Southern Vietnam","Sunda Shelf","Central Indo-Pacific",-1.52281038977567,-1.52281038977567,NA,61
+"Chatham Island","Southern New Zealand","Temperate Australasia",-1.59528920174946,-1.59528920174946,NA,166
+"Carolinian","Warm Temperate Northwest Atlantic","Temperate Northern Atlantic",-1.62178562649204,-1.62178562649204,NA,132
+"Levantine Sea","Mediterranean Sea","Temperate Northern Atlantic",-1.62933797256839,-1.62933797256839,NA,194
+"Malacca Strait","Sunda Shelf","Central Indo-Pacific",-1.66560909181937,-1.66560909181937,NA,56
+"Palawan/North Borneo","Western Coral Triangle","Central Indo-Pacific",-1.71688010671925,-1.71688010671925,NA,187
+"Northern Gulf of Mexico","Warm Temperate Northwest Atlantic","Temperate Northern Atlantic",-1.73220133586485,-1.73220133586485,NA,211
+"Southern Red Sea","Red Sea and Gulf of Aden","Western Indo-Pacific",-1.77794991144291,-1.77794991144291,NA,74
+"South European Atlantic Shelf","Lusitanian","Temperate Northern Atlantic",-1.78042283133438,-1.78042283133438,NA,282
+"Gulf of Tonkin","South China Sea","Central Indo-Pacific",-1.78565288792858,-1.78565288792858,NA,103
+"Floridian","Tropical Northwestern Atlantic","Tropical Atlantic",-1.86239419359741,-1.86239419359741,NA,64
+"Tristan Gough","Tristan Gough","Temperate South America",-1.88347382389683,-1.88347382389683,NA,404
+"Black Sea","Black Sea","Temperate Northern Atlantic",-1.91296871262685,-1.91296871262685,NA,154
+"Tweed-Moreton","East Central Australian Shelf","Temperate Australasia",-1.94256977887269,-1.94256977887269,NA,93
+"Sunda Shelf/Java Sea","Sunda Shelf","Central Indo-Pacific",-1.99564112815602,-1.99564112815602,NA,445
+"Northern and Central Red Sea","Red Sea and Gulf of Aden","Western Indo-Pacific",-2.03293637455751,-2.03293637455751,NA,80
+"Aegean Sea","Mediterranean Sea","Temperate Northern Atlantic",-2.03726156289183,-2.03726156289183,NA,117
+"Ionian Sea","Mediterranean Sea","Temperate Northern Atlantic",-2.10613935941395,-2.10613935941395,NA,144
+"Gulf of Thailand","Sunda Shelf","Central Indo-Pacific",-2.12231583676858,-2.12231583676858,NA,84
+"Rio Grande","Warm Temperate Southwestern Atlantic","Temperate South America",-2.14728889542234,-2.14728889542234,NA,101
+"Tunisian Plateau/Gulf of Sidra","Mediterranean Sea","Temperate Northern Atlantic",-2.17285467900007,-2.17285467900007,NA,165
+"Alboran Sea","Mediterranean Sea","Temperate Northern Atlantic",-2.20694978957128,-2.20694978957128,NA,35
+"North Greenland","Arctic","Arctic",-2.30171758286171,-2.30171758286171,NA,852
+"Northeastern New Zealand","Northern New Zealand","Temperate Australasia",-2.30423319257313,-2.30423319257313,NA,137
+"Snares Island","Southern New Zealand","Temperate Australasia",-2.35049480534191,-2.35049480534191,NA,54
+"Sea of Japan/East Sea","Cold Temperate Northwest Pacific","Temperate Northern Pacific",-2.37100469765494,-2.37100469765494,NA,409
+"Western Mediterranean","Mediterranean Sea","Temperate Northern Atlantic",-2.39048885262322,-2.39048885262322,NA,320
+"Manning-Hawkesbury","East Central Australian Shelf","Temperate Australasia",-2.39625518181018,-2.39625518181018,NA,77
+"Virginian","Cold Temperate Northwest Atlantic","Temperate Northern Atlantic",-2.41675988048591,-2.41675988048591,NA,129
+"Leeuwin","Southwest Australian Shelf","Temperate Australasia",-2.4255500758885,-2.4255500758885,NA,196
+"Southern Grand Banks - South Newfoundland","Cold Temperate Northwest Atlantic","Temperate Northern Atlantic",-2.44213852231017,-2.44213852231017,NA,152
+"Southern China","South China Sea","Central Indo-Pacific",-2.44502949302338,-2.44502949302338,NA,85
+"Oyashio Current","Cold Temperate Northwest Pacific","Temperate Northern Pacific",-2.52754024275476,-2.52754024275476,NA,430
+"Adriatic Sea","Mediterranean Sea","Temperate Northern Atlantic",-2.53070490065323,-2.53070490065323,NA,52
+"South New Zealand","Southern New Zealand","Temperate Australasia",-2.60853967495911,-2.60853967495911,NA,114
+"Gulf of Maine/Bay of Fundy","Cold Temperate Northwest Atlantic","Temperate Northern Atlantic",-2.73738588370766,-2.73738588370766,NA,77
+"Gulf of St. Lawrence - Eastern Scotian Shelf","Cold Temperate Northwest Atlantic","Temperate Northern Atlantic",-2.76956766558145,-2.76956766558145,NA,181
+"East China Sea","Warm Temperate Northwest Pacific","Temperate Northern Pacific",-2.78970721801093,-2.78970721801093,NA,258
+"Baffin Bay - Davis Strait","Arctic","Arctic",-2.92565426836979,-2.92565426836979,NA,340
+"Chiloense","Magellanic","Temperate South America",-2.98352741973427,-2.98352741973427,NA,88
+"Yellow Sea","Cold Temperate Northwest Pacific","Temperate Northern Pacific",-3.00867040494958,-3.00867040494958,NA,168
+"Arafura Sea","Sahul Shelf","Central Indo-Pacific",-3.17250673913467,-3.17250673913467,NA,106
+"Central New Zealand","Southern New Zealand","Temperate Australasia",-3.21979966697326,-3.21979966697326,NA,289
+"Torres Strait Northern Great Barrier Reef","Northeast Australian Shelf","Central Indo-Pacific",-3.24413454967934,-3.24413454967934,NA,63
+"Channels and Fjords of Southern Chile","Magellanic","Temperate South America",-3.31050218756505,-3.31050218756505,NA,332
+"Gulf of Papua","Sahul Shelf","Central Indo-Pacific",-3.39527410478984,-3.39527410478984,NA,21
+"Exmouth to Broome","Northwest Australian Shelf","Central Indo-Pacific",-3.54100198842396,-3.54100198842396,NA,197
+"Oregon, Washington, Vancouver Coast and Shelf","Cold Temperate Northeast Pacific","Temperate Northern Pacific",-3.61069398678349,-3.61069398678349,NA,142
+"North and East Iceland","Arctic","Arctic",-3.719963772192,-3.719963772192,NA,331
+"Rio de la Plata","Warm Temperate Southwestern Atlantic","Temperate South America",-3.73555917177883,-3.73555917177883,NA,10
+"Northern Grand Banks - Southern Labrador","Arctic","Arctic",-3.76236789680825,-3.76236789680825,NA,204
+"Celtic Seas","Northern European Seas","Temperate Northern Atlantic",-3.84433084247401,-3.84433084247401,NA,388
+"South and West Iceland","Northern European Seas","Temperate Northern Atlantic",-3.91761643155618,-3.91761643155618,NA,249
+"Central and Southern Great Barrier Reef","Northeast Australian Shelf","Central Indo-Pacific",-4.03286723775976,-4.03286723775976,NA,82
+"East Greenland Shelf","Arctic","Arctic",-4.03987712019854,-4.03987712019854,NA,481
+"Faroe Plateau","Northern European Seas","Temperate Northern Atlantic",-4.07725384260837,-4.07725384260837,NA,138
+"North Sea","Northern European Seas","Temperate Northern Atlantic",-4.15847666736518,-4.15847666736518,NA,417
+"Uruguay-Buenos Aires Shelf","Warm Temperate Southwestern Atlantic","Temperate South America",-4.16169812837798,-4.16169812837798,NA,153
+"North American Pacific Fijordland","Cold Temperate Northeast Pacific","Temperate Northern Pacific",-4.17859185472341,-4.17859185472341,NA,180
+"Hudson Complex","Arctic","Arctic",-4.32621699405357,-4.32621699405357,NA,261
+"Arnhem Coast to Gulf of Carpenteria","Sahul Shelf","Central Indo-Pacific",-4.39432134063814,-4.39432134063814,NA,193
+"Puget Trough/Georgia Basin","Cold Temperate Northeast Pacific","Temperate Northern Pacific",-4.443663595136,-4.443663595136,NA,4
+"West Greenland Shelf","Arctic","Arctic",-4.47728175821705,-4.47728175821705,NA,395
+"Cape Howe","Southeast Australian Shelf","Temperate Australasia",-4.50251847909829,-4.50251847909829,NA,103
+"Bonaparte Coast","Sahul Shelf","Central Indo-Pacific",-4.54466819440677,-4.54466819440677,NA,123
+"Northern Labrador","Arctic","Arctic",-4.5837662026883,-4.5837662026883,NA,225
+"Southern Norway","Northern European Seas","Temperate Northern Atlantic",-4.6371792919357,-4.6371792919357,NA,184
+"Western Bassian","Southeast Australian Shelf","Temperate Australasia",-4.6930931876847,-4.6930931876847,NA,126
+"Malvinas/Falklands","Magellanic","Temperate South America",-4.70691361187773,-4.70691361187773,NA,221
+"Bassian","Southeast Australian Shelf","Temperate Australasia",-4.77121055341091,-4.77121055341091,NA,186
+"Kamchatka Shelf and Coast","Cold Temperate Northwest Pacific","Temperate Northern Pacific",-4.99955905153609,-4.99955905153609,NA,467
+"Aleutian Islands","Cold Temperate Northeast Pacific","Temperate Northern Pacific",-5.02502856817089,-5.02502856817089,NA,624
+"Sea of Okhotsk","Cold Temperate Northwest Pacific","Temperate Northern Pacific",-5.05644093590141,-5.05644093590141,NA,550
+"Gulf of Alaska","Cold Temperate Northeast Pacific","Temperate Northern Pacific",-5.2958925881875,-5.2958925881875,NA,413
+"Northern Norway and Finnmark","Northern European Seas","Temperate Northern Atlantic",-5.34320443334064,-5.34320443334064,NA,297
+"South Australian Gulfs","Southwest Australian Shelf","Temperate Australasia",-5.75542059273231,-5.75542059273231,NA,64
+"Great Australian Bight","Southwest Australian Shelf","Temperate Australasia",-5.84079076815094,-5.84079076815094,NA,108
+"North Patagonian Gulfs","Magellanic","Temperate South America",-5.96845973541607,-5.96845973541607,NA,91
+"Patagonian Shelf","Magellanic","Temperate South America",-6.32431218230938,-6.32431218230938,NA,217
+"Eastern Bering Sea","Arctic","Arctic",-6.63044729425444,-6.63044729425444,NA,599
+"North and East Barents Sea","Arctic","Arctic",-7.09340116012175,-7.09340116012175,NA,1828
+"Bouvet Island","Subantarctic Islands","Southern Ocean",-7.98054447552276,-7.98054447552276,NA,1
+"Antarctic Peninsula","Scotia Sea","Southern Ocean",-8.19903405064174,-8.19903405064174,NA,258
+"Baltic Sea","Northern European Seas","Temperate Northern Atlantic",-8.6762125530491,-8.6762125530491,NA,228
+"Chukchi Sea","Arctic","Arctic",-8.7395790010118,-8.7395790010118,NA,390
+"Beaufort Sea - continental coast and shelf","Arctic","Arctic",-8.77603717703051,-8.77603717703051,NA,2
+"Weddell Sea","Continental High Antarctic","Southern Ocean",-8.86962864128144,-8.86962864128144,NA,174
+"White Sea","Arctic","Arctic",-9.90839696556736,-9.90839696556736,NA,62
+"Amundsen/Bellingshausen Sea","Continental High Antarctic","Southern Ocean",-10.7488936531493,-10.7488936531493,NA,298
+"Peter the First Island","Subantarctic Islands","Southern Ocean",-10.7488936531493,-10.7488936531493,NA,5
