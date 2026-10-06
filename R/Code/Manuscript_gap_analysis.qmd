@@ -71,7 +71,7 @@ eez <- st_read(here("R","Data", "World_EEZ_v12_20231025", "eez_v12.shp"), quiet 
 Bathy <- raster(here::here("R","Data", "bathymetry-0.1deg-adjusted.tif"))
 
 # IUCN statuses
-IUCN <- readRDS(here::here("R","Data", "sharks_iucn_final.RDS"))
+IUCN <- readRDS(here::here("R","Data", "sharks_iucn_final.rds"))
 IUCN$species <- gsub("_", " ", IUCN$Species)
 ```
 
