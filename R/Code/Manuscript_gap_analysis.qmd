@@ -6,11 +6,17 @@ format:
   html:
     toc: true
     toc-location: right
-    css: ../Quarto_template/custom.css
-    output-file: "Manuscript_gap_analysis.html"
     self-contained: true
     code-fold: true
     code-tools: true
+    lightbox: true
+    html-table-processing: none
+    fig-align: center
+    css: ../Quarto_template/custom.css
+    include-before-body: ../Quarto_template/header.html
+    include-after-body: ../Quarto_template/footer_uzh.html
+    theme: none
+    output-file: "Manuscript_gap_analysis.html"
 editor: visual
 execute:
   warning: false

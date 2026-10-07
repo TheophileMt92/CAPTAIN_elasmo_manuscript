@@ -250,9 +250,36 @@ body {
 /* ── Table styling ──────────────────────────────────────────── */
 table {
   border-collapse: collapse;
-  width: 100%;
-  margin: 1.5rem 0;
+  width: auto !important;
+  margin: 1.5rem auto !important;
   font-size: 0.9em;
+}
+
+/* Same header style for all tables (overrides inline kableExtra styles) */
+thead tr, thead th {
+  background: var(--ocean-deep) !important;
+  color: #ffffff !important;
+}
+
+/* Table notes (kableExtra footnotes) span the full table width */
+tfoot td {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  border: none;
+  padding: .4rem .5rem;
+}
+
+table caption {
+  caption-side: top;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-bottom: .4rem;
+}
+
+/* Figures never wider than the text column */
+.cell-output-display img, figure img, .quarto-figure img {
+  max-width: 100%;
+  height: auto;
 }
 
 thead {
