@@ -1308,7 +1308,96 @@ kable(comprehensive_diagnostics,
 cat("\n")
 
 ```
+
+## Robustness of beta regressions to the boundary correction
+
+Proportion of species with 0% or 100% protected range, and beta regression slopes under alternative boundary corrections.
+
+```{r}
+# Proportion of boundary values per dimension
+boundary_summary <- purrr::map_dfr(c("IUCN", "FUSE", "EDGE2"), function(d) {
+  y <- model_data[[paste0(d, "_protection")]] / 100
+  tibble::tibble(Dimension = d,
+                 n = length(y),
+                 `Exactly 0 (%)` = round(100 * mean(y == 0), 1),
+                 `Exactly 1 (%)` = round(100 * mean(y == 1), 1))
+})
+kable(boundary_summary, caption = "Species with 0% or 100% of their range protected")
+
+# Beta regressions under alternative boundary corrections
+sv <- function(y, n) (y * (n - 1) + 0.5) / n
+corrections <- list(
+  "S&V, n = 1000"  = function(y) sv(y, nrow(model_data)),
+  "S&V, n = 100"   = function(y) sv(y, 100),
+  "S&V, n = 10000" = function(y) sv(y, 10000),
+  "Clamp 0.001"    = function(y) pmin(pmax(y, 0.001), 0.999),
+  "Clamp 0.01"     = function(y) pmin(pmax(y, 0.01), 0.99)
+)
+dims <- c(IUCN = "IUCN_status", FUSE = "FUSE_score", EDGE2 = "EDGE2_score")
+
+robustness <- purrr::map_dfr(names(dims), function(d) {
+  y_raw <- model_data[[paste0(d, "_protection")]] / 100
+  x     <- model_data[[dims[[d]]]]
+  res <- purrr::imap_dfr(corrections, function(f, nm) {
+    m <- betareg::betareg(f(y_raw) ~ x)
+    s <- summary(m)$coefficients$mean["x", ]
+    tibble::tibble(Dimension = d, Correction = nm, n = length(y_raw),
+                   Slope = s[1], SE = s[2], p = s[4])
+  })
+  keep <- y_raw > 0 & y_raw < 1
+  m <- betareg::betareg(y_raw[keep] ~ x[keep])
+  s <- summary(m)$coefficients$mean[2, ]
+  dplyr::bind_rows(res, tibble::tibble(Dimension = d, Correction = "Exclude 0 and 1",
+                                       n = sum(keep), Slope = s[1], SE = s[2], p = s[4]))
+})
+
+# Format table for the Supplementary Materials (Table S7)
+robustness_table <- robustness %>%
+  dplyr::mutate(
+    Correction = dplyr::recode(Correction,
+                               "S&V, n = 1000"  = "S&V, n = 1,000",
+                               "S&V, n = 10000" = "S&V, n = 10,000",
+                               "Clamp 0.001"    = "Offset 0.001",
+                               "Clamp 0.01"     = "Offset 0.01",
+                               "Exclude 0 and 1" = "Excluding 0 and 1"),
+    n     = format(n, big.mark = ","),
+    Slope = sprintf("%.3f", Slope),
+    SE    = sprintf("%.3f", SE),
+    p     = ifelse(p < 0.001, "< 0.001", sprintf("%.3f", p))
+  )
+
+robustness_kable <- kable(robustness_table,
+      format = "html",
+      col.names = c("Dimension", "Correction", "n", "Slope", "SE", "p-value"),
+      caption = "Robustness of beta regression results to the boundary correction",
+      row.names = FALSE,
+      align = c("l", "l", "c", "c", "c", "c")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE,
+                position = "center") %>%
+  column_spec(1, bold = TRUE, width = "90px") %>%
+  column_spec(2, width = "160px") %>%
+  column_spec(3:6, width = "80px") %>%
+  row_spec(0, bold = TRUE, background = "#f0f0f0") %>%
+  row_spec(which(robustness_table$Correction == "S&V, n = 1,000"),
+           background = "#f5f9ff") %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  footnote(general = "Slopes on the logit scale. S&V: Smithson & Verkuilen correction, y' = (y(n - 1) + 0.5)/n. Highlighted rows correspond to the correction used in the main analysis.",
+           general_title = "Note:")
+
+robustness_kable
+
+# Save as PNG
+save_kable(robustness_kable,
+           file = here::here("R", "Outputs", "Table_S7_beta_regression_robustness.png"),
+           zoom = 2)
+
+write.csv(robustness, here::here("R", "Outputs", "beta_regression_robustness.csv"),
+          row.names = FALSE)
+```
+
 ## Species accumulation curve
+
 ```{r}
 #======================
 # FIG 2D: ENHANCED PROTECTION CURVES WITH ANNOTATIONS AND INSET
@@ -1543,7 +1632,8 @@ ggsave(
 ```
 
 Now each annotation is:
-```
+
+```         
 <1%
 IUCN: X%
 FUSE: Y%
@@ -2229,7 +2319,7 @@ congruence_results <- data.frame(
 print(congruence_results)
 ```
 
-# Relationship with fishing effort 
+# Relationship with fishing effort
 
 ## Bivariate maps
 
@@ -2635,5 +2725,3 @@ ecoregion_combined_edge2 %>%
   dplyr::select(ECOREGION, mean_priority, mean_fishing_hours) %>%
   print()
 ```
-
-
