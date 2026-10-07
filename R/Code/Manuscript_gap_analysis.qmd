@@ -557,7 +557,10 @@ ggsave(here("R","Outputs", "top_eezs_NT_coverage.png"), top_eez_plot, width = 10
 
 ## Null model of MPA placement and overlaps with the range of sharks and rays
 
+The null model (100 iterations) is not re-run when rendering this report: its results are saved in `R/Outputs/species_random_No-take MPAs_coverage.csv` and loaded in the next section. Set `eval: true` below to re-run it (results are reproducible, as each iteration uses a fixed seed).
+
 ```{r}
+#| eval: false
 # Create marine mask from bathymetry (areas < 0)
 marine_mask <- Bathy < 0
 
@@ -1334,9 +1337,9 @@ results_IUCN <- results_IUCN %>%
 iucn_colors <- c(
   "CR" = "#D81E05",
   "EN" = "#FC7F3F",
-  "VU" = "#FEC748",
-  "NT" = "#58AFFF",
-  "LC" = "#38AB38"
+  "VU" = "#F9E814",
+  "NT" = "#CCE226",
+  "LC" = "#60C659"
 )
 
 iucn_order <- c("LC", "NT", "VU", "EN", "CR")

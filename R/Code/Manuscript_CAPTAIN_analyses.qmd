@@ -770,11 +770,11 @@ if(nrow(protected_fractions) == nrow(shark_metrics)) {
   iucn_order <- c("LC", "NT", "VU", "EN", "CR")
   
   iucn_colors <- c(
-    "LC" = "#50C878",
-    "NT" = "#FFFF00",
-    "VU" = "#FFA500",
-    "EN" = "#FF8C00",
-    "CR" = "#FF0000"
+    "LC" = "#60C659",
+    "NT" = "#CCE226",
+    "VU" = "#F9E814",
+    "EN" = "#FC7F3F",
+    "CR" = "#D81E05"
   )
   
   # Calculate sample sizes for each group
@@ -800,9 +800,9 @@ if(nrow(protected_fractions) == nrow(shark_metrics)) {
   
   # Define color palettes
 iucn_colors <- c(
-  "LC" = "#38AB38",
-  "NT" = "#58AFFF",
-  "VU" = "#FEC748",
+  "LC" = "#60C659",
+  "NT" = "#CCE226",
+  "VU" = "#F9E814",
   "EN" = "#FC7F3F",
   "CR" = "#D81E05"
 )
