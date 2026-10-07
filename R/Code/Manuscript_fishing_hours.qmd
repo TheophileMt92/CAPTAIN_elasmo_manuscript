@@ -9,6 +9,9 @@ format:
     self-contained: true
     code-fold: true
     code-tools: true
+    lightbox: true
+    html-table-processing: none
+    fig-align: center
     css: ../Quarto_template/custom.css
     include-before-body: ../Quarto_template/header.html
     include-after-body: ../Quarto_template/footer_uzh.html
@@ -72,6 +75,51 @@ Bathy_adjusted <- raster(here::here("R", "Data", "bathymetry-0.1deg-adjusted.tif
 
 # Load combined AIS and SAR data
 load(here::here("R", "Data","combined_data_O1deg.Rdata"))
+
+# High seas mask, used to remove high-seas cells from the fishing maps
+# (the high seas are not included in the analyses of fishing effort)
+High_seas <- st_read(here::here("R", "Data", "World_High_Seas_v2_20241010", "High_Seas_v2.shp"), quiet = TRUE)
+high_seas_raster <- terra::rasterize(terra::vect(High_seas),
+                                     terra::rast(xmin = -180, xmax = 180, ymin = -90, ymax = 90, resolution = 0.1),
+                                     field = 1)
+
+# Removes 0.1-degree cells whose centre falls within the high seas
+# (lon_std and lat_std are the lower-left corners of the cells)
+remove_high_seas <- function(df) {
+  xy <- cbind(df$lon_std + 0.05, df$lat_std + 0.05)
+  in_high_seas <- terra::values(high_seas_raster)[terra::cellFromXY(high_seas_raster, xy), 1]
+  df[is.na(in_high_seas), ]
+}
+
+# McBryde-Thomas 2 projection, as in the main text maps
+mcbryde_thomas_2 <- "+proj=mbt_s"
+
+land_projected <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") %>%
+  st_transform(crs = mcbryde_thomas_2)
+
+globe_border <- st_polygon(list(rbind(c(-180, -90), c(-180, 90), c(180, 90), c(180, -90), c(-180, -90)))) %>%
+  st_sfc(crs = 4326) %>%
+  smoothr::densify(max_distance = 0.5) %>%
+  st_transform(crs = mcbryde_thomas_2)
+
+# Projects 0.1-degree cells (lon_std/lat_std = lower-left corners) to McBryde-Thomas 2,
+# as for the grid cells in Fig. 2 (point transformation, no raster reprojection).
+# Each cell is drawn as its projected outline: in this pseudocylindrical projection,
+# y depends only on latitude and x is linear in longitude along a parallel, so the
+# projected cells tile the map exactly, without gaps or overlaps
+project_tiles <- function(df, value_col) {
+  df <- df[!is.na(df[[value_col]]), ]
+  lon <- df$lon_std
+  lat <- df$lat_std
+  lonlat <- "+proj=longlat +datum=WGS84 +no_defs"
+  west  <- sf::sf_project(lonlat, mcbryde_thomas_2, cbind(lon,        lat + 0.05))
+  east  <- sf::sf_project(lonlat, mcbryde_thomas_2, cbind(lon + 0.1,  lat + 0.05))
+  south <- sf::sf_project(lonlat, mcbryde_thomas_2, cbind(lon + 0.05, lat))
+  north <- sf::sf_project(lonlat, mcbryde_thomas_2, cbind(lon + 0.05, pmin(lat + 0.1, 90)))
+  out <- data.frame(xmin = west[, 1], xmax = east[, 1], ymin = south[, 2], ymax = north[, 2])
+  out[[value_col]] <- df[[value_col]]
+  out[is.finite(out$xmin) & is.finite(out$xmax) & is.finite(out$ymin) & is.finite(out$ymax), ]
+}
 
 # Join overpass frequency data and compute normalised detections
 combined_data_01deg <- combined_data_01deg %>%
@@ -180,11 +228,10 @@ world_map <- map_data("world")
 
 # Assign plot to variable
 AIS_data_plot <- ggplot() +
-  geom_map(data = world_map, map = world_map,
-           aes(long = long, lat = lat, map_id = region),
-           color = "black", fill = "lightgray", size = 0.1) +
-  geom_tile(data = AIS_data_std, 
-            aes(x = lon_std, y = lat_std, fill = total_fishing_hours)) +
+  geom_rect(data = project_tiles(remove_high_seas(AIS_data_std), "total_fishing_hours"),
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = total_fishing_hours)) +
+  geom_sf(data = land_projected, fill = "lightgrey", color = "lightgrey", linewidth = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "black", linewidth = 0.5) +
   scale_fill_viridis(
     option = "inferno",
     direction = -1,
@@ -194,10 +241,10 @@ AIS_data_plot <- ggplot() +
     labels = scales::comma,
     guide = guide_colorbar(barwidth = 20, barheight = 0.5, title.position = "top", title.hjust = 0.5)
   ) +
-  coord_fixed(1.3) +
+  coord_sf(crs = mcbryde_thomas_2, datum = NA) +
   theme_minimal() +
   labs(title = NULL,
-       x = "Longitude", y = "Latitude") +
+       x = NULL, y = NULL) +
   theme(
     legend.position = "bottom",
     legend.direction = "horizontal",
@@ -278,11 +325,10 @@ world_map <- map_data("world")
 
 # Assign plot to variable
 SAR_data_plot <- ggplot() +
-  geom_map(data = world_map, map = world_map,
-           aes(long = long, lat = lat, map_id = region),
-           color = "black", fill = "lightgray", size = 0.1) +
-  geom_tile(data = SAR_data_std, 
-            aes(x = lon_std, y = lat_std, fill = total_presence_score)) +
+  geom_rect(data = project_tiles(SAR_data_std, "total_presence_score"),
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = total_presence_score)) +
+  geom_sf(data = land_projected, fill = "lightgrey", color = "lightgrey", linewidth = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "black", linewidth = 0.5) +
   scale_fill_viridis(
     option = "inferno",
     direction = -1,
@@ -292,10 +338,10 @@ SAR_data_plot <- ggplot() +
     labels = scales::comma,
     guide = guide_colorbar(barwidth = 20, barheight = 0.5, title.position = "top", title.hjust = 0.5)
   ) +
-  coord_fixed(1.3) +
+  coord_sf(crs = mcbryde_thomas_2, datum = NA) +
   theme_minimal() +
   labs(title = NULL,
-       x = "Longitude", y = "Latitude") +
+       x = NULL, y = NULL) +
   theme(
     legend.position = "bottom",
     legend.direction = "horizontal",
@@ -339,11 +385,10 @@ world_map <- map_data("world")
 
 # Create the plot
 world_plot <- ggplot() +
-  geom_map(data = world_map, map = world_map,
-           aes(long = long, lat = lat, map_id = region),
-           color = "black", fill = "lightgray", size = 0.1) +
-  geom_tile(data = combined_data, 
-            aes(x = lon_std, y = lat_std, fill = category)) +
+  geom_rect(data = project_tiles(remove_high_seas(combined_data), "category"),
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = category)) +
+  geom_sf(data = land_projected, fill = "lightgrey", color = "lightgrey", linewidth = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "black", linewidth = 0.5) +
   scale_fill_manual(
     values = c("Both AIS and SAR" = "purple", 
                "Only AIS" = "blue", 
@@ -352,11 +397,11 @@ world_plot <- ggplot() +
     name = "Fishing data source",
     guide = guide_legend(title.position = "top", title.hjust = 0.5)
   ) +
-  coord_fixed(1.3) +
+  coord_sf(crs = mcbryde_thomas_2, datum = NA) +
   theme_minimal() +
   labs(title = "Global fishing detection",
        subtitle = "Comparison of AIS (2017-2020) and SAR (2017-2020) data at 0.1-degree resolution",
-       x = "Longitude", y = "Latitude") +
+       x = NULL, y = NULL) +
   theme(
     legend.position = "bottom",
     legend.direction = "horizontal",
@@ -731,11 +776,10 @@ world_map <- map_data("world")
 
 # Global map
 predicted_plot <- ggplot() +
-  geom_map(data = world_map, map = world_map,
-           aes(long, lat, map_id = region),
-           color = "black", fill = "lightgray", linewidth = 0.1) +
-  geom_tile(data = combined_data_01deg,
-            aes(x = lon_std, y = lat_std, fill = predicted_fishing_hours)) +
+  geom_rect(data = project_tiles(remove_high_seas(combined_data_01deg), "predicted_fishing_hours"),
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = predicted_fishing_hours)) +
+  geom_sf(data = land_projected, fill = "lightgrey", color = "lightgrey", linewidth = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "black", linewidth = 0.5) +
   scale_fill_viridis(
     option = "inferno",
     direction = -1,
@@ -746,11 +790,11 @@ predicted_plot <- ggplot() +
     guide = guide_colorbar(barwidth = 20, barheight = 0.5,
                            title.position = "top", title.hjust = 0.5)
   ) +
-  coord_fixed(1.3) +
+  coord_sf(crs = mcbryde_thomas_2, datum = NA) +
   theme_minimal() +
   labs(title = "Global fishing hours (0.1 degree resolution)",
        subtitle = "AIS data and normalised random forest predictions from SAR data",
-       x = "Longitude", y = "Latitude") +
+       x = NULL, y = NULL) +
   theme(
     legend.position = "bottom",
     legend.direction = "horizontal",
@@ -897,15 +941,17 @@ table_output <- kable(results_table, format = "html", digits = 4,
                 full_width = TRUE,
                 position = "center")
 
+table_output
+
 # Save as HTML first
 save_kable(table_output, file = here::here("R", "Outputs", "model_evaluation.html"))
 
 # Then screenshot with custom viewport
-webshot(here::here("R", "Outputs", "model_evaluation.html"), 
+invisible(webshot(here::here("R", "Outputs", "model_evaluation.html"), 
         here::here("R", "Outputs", "model_evaluation.png"),
         vwidth = 800,   # Width in pixels
         vheight = 360,  # Height in pixels - adjust as needed
-        zoom = 2)
+        zoom = 2))
 
 # For feature importance, create a separate table
 # Use $ before the backticks
@@ -926,15 +972,17 @@ table_output <- kable(feature_importance, format = "html", digits = 2,
   column_spec(1, bold = TRUE) %>%
   column_spec(2:3, width = "150px")
 
+table_output
+
 # Save as HTML first
 save_kable(table_output, file = here::here("R", "Outputs", "feature_importance.html"))
 
 # Then screenshot with custom viewport
-webshot(here::here("R", "Outputs", "feature_importance.html"), 
+invisible(webshot(here::here("R", "Outputs", "feature_importance.html"), 
         here::here("R", "Outputs", "feature_importance.png"),
         vwidth = 720,   # Width in pixels
         vheight = 300,  # Height in pixels - adjust as needed
-        zoom = 2)
+        zoom = 2))
 ```
 
 ## Maps of predictions
@@ -1062,11 +1110,10 @@ print(asia_map)
 #Map of both original and predicted AIS fishing hours 
 # Visualize the results
 predicted_plot <- ggplot() +
-  geom_map(data = world_map, map = world_map,
-           aes(long, lat, map_id = region),
-           color = "black", fill = "lightgray", size = 0.1) +
-  geom_tile(data = combined_data_01deg, 
-            aes(x = lon_std, y = lat_std, fill = predicted_fishing_hours)) +
+  geom_rect(data = project_tiles(remove_high_seas(combined_data_01deg), "predicted_fishing_hours"),
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = predicted_fishing_hours)) +
+  geom_sf(data = land_projected, fill = "lightgrey", color = "lightgrey", linewidth = 0.1) +
+  geom_sf(data = globe_border, fill = NA, color = "black", linewidth = 0.5) +
   scale_fill_viridis(
     option = "inferno",
     direction = -1,
@@ -1076,11 +1123,11 @@ predicted_plot <- ggplot() +
     labels = scales::comma,
     guide = guide_colorbar(barwidth = 20, barheight = 0.5, title.position = "top", title.hjust = 0.5)
   ) +
-  coord_fixed(1.3) +
+  coord_sf(crs = mcbryde_thomas_2, datum = NA) +
   theme_minimal() +
   labs(title = "Global fishing hours (0.1 degree resolution)",
        subtitle = "Based on AIS data and random forest predictions from SAR data",
-       x = "Longitude", y = "Latitude") +
+       x = NULL, y = NULL) +
   theme(
     legend.position = "bottom",
     legend.direction = "horizontal",

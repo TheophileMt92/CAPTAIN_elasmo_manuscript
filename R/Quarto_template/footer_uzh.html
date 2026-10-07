@@ -23,3 +23,20 @@
     </div>
   </div>
 </footer>
+
+<script>
+/* Full-screen figures: with self-contained reports, the lightbox links point to
+   image files that no longer exist, so they are redirected to the embedded images */
+document.addEventListener("DOMContentLoaded", function () {
+  document.querySelectorAll("a.lightbox").forEach(function (a) {
+    var img = a.querySelector("img");
+    if (img && img.src) {
+      a.setAttribute("href", img.src);
+      a.setAttribute("data-type", "image");
+    }
+  });
+  if (window.lightboxQuarto && typeof window.lightboxQuarto.reload === "function") {
+    window.lightboxQuarto.reload();
+  }
+});
+</script>
